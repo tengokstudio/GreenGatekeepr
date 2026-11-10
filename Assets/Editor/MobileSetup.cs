@@ -10,34 +10,34 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 /// <summary>
-/// Tool sekali pakai untuk menyiapkan Movement-Test jadi build mobile:
+/// Tool sekali pakai untuk menyiapkan scene aktif jadi build mobile:
 ///  - Canvas + Safe Area + EventSystem (Input System)
 ///  - Virtual joystick (kiri bawah)
 ///  - Tombol kecil ubah camera mode (atas-kiri joystick)
 ///  - Area swipe penuh layar
 ///  - Wiring komponen MobileCameraRig / MobilePlayerInput
 ///  - Player Settings Android landscape
-/// Jalankan: Tools > Mobile > Setup Movement-Test (Mobile UI)
+/// Jalankan: Tools > Mobile > Setup (Active Scene)
 /// </summary>
 public static class MobileSetup
 {
-    const string ScenePath = "Assets/Scenes/Movement-Test.unity";
     const string UiRootName = "MobileUI";
 
-    [MenuItem("Tools/Mobile/Setup Movement-Test (Mobile UI)", priority = 10)]
+    [MenuItem("Tools/Mobile/Setup (Active Scene)", priority = 10)]
     public static void SetupFromMenu()
     {
         Scene scene = EditorSceneManager.GetActiveScene();
-        if (scene.path != ScenePath)
+        if (string.IsNullOrEmpty(scene.path))
         {
-            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-            scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            EditorUtility.DisplayDialog("Mobile Setup",
+                "Simpan scene dulu, lalu jalankan setup lagi.", "OK");
+            return;
         }
 
         Setup(scene);
     }
 
-    [MenuItem("Tools/Mobile/Remove Mobile UI (Movement-Test)", priority = 11)]
+    [MenuItem("Tools/Mobile/Remove Mobile UI (Active Scene)", priority = 11)]
     public static void RemoveFromMenu()
     {
         Scene scene = EditorSceneManager.GetActiveScene();
@@ -187,6 +187,50 @@ public static class MobileSetup
         label.color = Color.white;
         label.raycastTarget = false;
 
+        // ---------------- Tombol attack (kanan bawah, sejajar joystick) ----------------
+        RectTransform attackRect = CreateRect("AttackButton", safeArea);
+        attackRect.anchorMin = new Vector2(1f, 0f);
+        attackRect.anchorMax = new Vector2(1f, 0f);
+        attackRect.pivot = new Vector2(0.5f, 0.5f);
+        attackRect.anchoredPosition = new Vector2(-235f, 235f);
+        attackRect.sizeDelta = new Vector2(160f, 160f);
+
+        Image attackImage = attackRect.gameObject.AddComponent<Image>();
+        attackImage.sprite = CircleSprite;
+        attackImage.color = new Color(0.85f, 0.2f, 0.2f, 0.85f);
+        attackImage.raycastTarget = true;
+
+        Button attackButton = attackRect.gameObject.AddComponent<Button>();
+        attackButton.targetGraphic = attackImage;
+
+        ColorBlock attackColors = attackButton.colors;
+        attackColors.normalColor = Color.white;
+        attackColors.highlightedColor = new Color(1f, 0.85f, 0.85f, 1f);
+        attackColors.pressedColor = new Color(0.7f, 0.45f, 0.45f, 1f);
+        attackButton.colors = attackColors;
+
+        RectTransform attackLabelRect = CreateRect("Label", attackRect);
+        Stretch(attackLabelRect);
+        Text attackLabel = attackLabelRect.gameObject.AddComponent<Text>();
+        attackLabel.font = UiFont;
+        attackLabel.text = "ATK";
+        attackLabel.fontSize = 40;
+        attackLabel.fontStyle = FontStyle.Bold;
+        attackLabel.alignment = TextAnchor.MiddleCenter;
+        attackLabel.color = Color.white;
+        attackLabel.raycastTarget = false;
+
+        // ---------------- FirePoint (tengah kamera FPS) ----------------
+        Transform firePoint = fpCamera.transform.Find("FirePoint");
+        if (firePoint == null)
+        {
+            GameObject firePointObject = new GameObject("FirePoint");
+            firePointObject.transform.SetParent(fpCamera.transform, false);
+            firePoint = firePointObject.transform;
+        }
+        firePoint.localPosition = new Vector3(0f, 0f, 0.6f);
+        firePoint.localRotation = Quaternion.identity;
+
         // ---------------- Rig + wiring ----------------
         MobileCameraRig rig = cameraManager.GetComponent<MobileCameraRig>();
         if (rig == null) rig = cameraManager.AddComponent<MobileCameraRig>();
@@ -197,14 +241,24 @@ public static class MobileSetup
         rig.fpCam = fpCamera;
         rig.switcher = switcher;
         rig.modeLabel = label;
+        rig.fpEyeOffset = new Vector3(0f, 1.6f, 0.15f);
 
         MobilePlayerInput playerInput = player.GetComponent<MobilePlayerInput>();
         if (playerInput == null) playerInput = player.AddComponent<MobilePlayerInput>();
         playerInput.joystick = joystick;
 
+        MobileAttackInput attackInput = player.GetComponent<MobileAttackInput>();
+        if (attackInput == null) attackInput = player.AddComponent<MobileAttackInput>();
+        attackInput.switcher = switcher;
+        attackInput.buttonRoot = attackRect.gameObject;
+        attackInput.animator = player.GetComponentInChildren<Animator>(true);
+        attackInput.firePoint = firePoint;
+        attackInput.bulletPrefab = EnsureBulletPrefab();
+
         swipeArea.rig = rig;
 
         UnityEventTools.AddPersistentListener(button.onClick, rig.ToggleCameraMode);
+        UnityEventTools.AddPersistentListener(attackButton.onClick, attackInput.Attack);
 
         ConfigurePlayerSettings();
 
@@ -212,8 +266,9 @@ public static class MobileSetup
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
 
-        Debug.Log("[MobileSetup] Selesai: Canvas + SafeArea + Joystick + Tombol ISO/FPS + SwipeArea terpasang, " +
-                  "MobileCameraRig di CameraManager, MobilePlayerInput di Player. Scene disimpan.");
+        Debug.Log("[MobileSetup] Selesai: Canvas + SafeArea + Joystick + Tombol ISO/FPS + Tombol ATK + SwipeArea terpasang, " +
+                  "MobileCameraRig di CameraManager, MobilePlayerInput + MobileAttackInput di Player, " +
+                  "FirePoint + prefab MobileBullet siap. Scene disimpan.");
     }
 
     static void Remove()
@@ -233,7 +288,72 @@ public static class MobileSetup
         {
             MobilePlayerInput input = player.GetComponent<MobilePlayerInput>();
             if (input != null) Object.DestroyImmediate(input);
+
+            MobileAttackInput attack = player.GetComponent<MobileAttackInput>();
+            if (attack != null) Object.DestroyImmediate(attack);
         }
+
+        GameObject fpCamera = GameObject.Find("Perspective Camera");
+        if (fpCamera != null)
+        {
+            Transform firePoint = fpCamera.transform.Find("FirePoint");
+            if (firePoint != null) Object.DestroyImmediate(firePoint.gameObject);
+        }
+    }
+
+    static GameObject EnsureBulletPrefab()
+    {
+        const string prefabFolder = "Assets/Prefabs";
+        const string materialFolder = "Assets/Materials";
+        const string prefabPath = prefabFolder + "/MobileBullet.prefab";
+        const string materialPath = materialFolder + "/MobileBullet.mat";
+
+        if (!AssetDatabase.IsValidFolder(prefabFolder)) AssetDatabase.CreateFolder("Assets", "Prefabs");
+        if (!AssetDatabase.IsValidFolder(materialFolder)) AssetDatabase.CreateFolder("Assets", "Materials");
+
+        GameObject existing = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        if (existing != null) return existing;
+
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+        if (material == null)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+
+            Color color = new Color(1f, 0.82f, 0.15f, 1f);
+            material = new Material(shader) { name = "MobileBullet" };
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+            material.color = color;
+
+            if (material.HasProperty("_EmissionColor"))
+            {
+                material.EnableKeyword("_EMISSION");
+                material.SetColor("_EmissionColor", color * 2f);
+            }
+
+            AssetDatabase.CreateAsset(material, materialPath);
+        }
+
+        GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        temp.name = "MobileBullet";
+        temp.transform.localScale = Vector3.one * 0.12f;
+
+        Collider collider = temp.GetComponent<Collider>();
+        if (collider != null) Object.DestroyImmediate(collider);
+
+        MeshRenderer renderer = temp.GetComponent<MeshRenderer>();
+        if (renderer != null) renderer.sharedMaterial = material;
+
+        MobileBullet bullet = temp.AddComponent<MobileBullet>();
+        bullet.speed = 60f;
+        bullet.lifetime = 3f;
+        bullet.radius = 0.06f;
+        bullet.hitMask = ~0;
+
+        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(temp, prefabPath);
+        Object.DestroyImmediate(temp);
+        AssetDatabase.SaveAssets();
+        return prefab;
     }
 
     static void ConfigurePlayerSettings()

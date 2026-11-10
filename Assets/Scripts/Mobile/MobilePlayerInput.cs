@@ -12,6 +12,13 @@ public class MobilePlayerInput : MonoBehaviour
     [Header("References")]
     public VirtualJoystick joystick;
 
+    [Header("Movement")]
+    [Tooltip("Kecepatan gerak default. Karakter langsung lari, bukan jalan pelan.")]
+    public float runSpeed = 8f;
+
+    [Tooltip("Timpa Speed bawaan sample (2.5 = jalan pelan) saat play.")]
+    public bool applyRunSpeed = true;
+
     [Header("Tuning")]
     [Tooltip("Batas bawah input yang diabaikan.")]
     [Range(0f, 0.4f)] public float deadZone = 0.1f;
@@ -22,6 +29,9 @@ public class MobilePlayerInput : MonoBehaviour
     {
         controller = GetComponent<SimplePlayerController>();
         if (controller == null) controller = GetComponentInChildren<SimplePlayerController>(true);
+
+        if (applyRunSpeed && controller != null && runSpeed > 0f)
+            controller.Speed = runSpeed;
     }
 
     void Update()
