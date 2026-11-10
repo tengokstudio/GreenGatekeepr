@@ -5,7 +5,7 @@ using UnityEngine.UI;
 /// <summary>
 /// Rig kamera mobile dengan dua mode:
 ///  - Isometric : kamera ortho dengan sudut tetap, mengikuti Player, swipe = pan (tanpa rotasi).
-///  - FirstPerson: shoulder cam, swipe = putar yaw/pitch.
+///  - FirstPerson: kamera di tengah (mata), swipe = putar yaw/pitch.
 ///
 /// Transform kedua CinemachineCamera di-drive script ini (komponen prosedural Cinemachine
 /// di-nonaktifkan saat runtime), sehingga CinemachineBrain tetap bisa nge-blend antar mode.
@@ -32,13 +32,32 @@ public class MobileCameraRig : MonoBehaviour
     [Tooltip("Seberapa cepat kamera menyusul Player / target pan.")]
     public float isoFollowDamping = 8f;
 
-    [Header("First Person (shoulder cam)")]
-    public Vector3 shoulderOffset = new Vector3(0.35f, 1.45f, 0.15f);
+    [Header("Isometric Edit / Free Pan")]
+    [Tooltip("[Isometric] Edit mode: kamera bergeser bebas dan tidak mengikuti Player.")]
+    public bool freePan;
+
+    [Tooltip("Radius geser bebas dari posisi Player saat edit mode.")]
+    public float freePanRadius = 60f;
+
+    [Header("First Person (center / mata)")]
+    [Tooltip("Posisi kamera relatif ke Player. X harus 0 supaya benar-benar di tengah.")]
+    public Vector3 fpEyeOffset = new Vector3(0f, 1.6f, 0.15f);
+
+    [Tooltip("Sembunyikan model karakter saat FPS supaya kepala/badan tidak menutupi pandangan.")]
+    public bool hidePlayerModelInFirstPerson = true;
+
     public float fpFollowDamping = 16f;
     [Tooltip("Derajat per pixel swipe.")]
     public float lookSensitivity = 0.18f;
     public Vector2 pitchLimits = new Vector2(-60f, 75f);
     public float fpFieldOfView = 62f;
+
+    [Header("Transition")]
+    [Tooltip("Durasi pan kamera saat ganti mode (detik). Satu gerakan halus, bukan dua.")]
+    [Range(0.2f, 3f)] public float transitionDuration = 0.9f;
+
+    [Tooltip("Abaikan tombol mode & swipe selama transisi supaya pan cuma sekali.")]
+    public bool lockDuringTransition = true;
 
     [Header("Mobile runtime")]
     public bool disableSampleCameraInput = true;
@@ -47,23 +66,45 @@ public class MobileCameraRig : MonoBehaviour
 
     Vector3 isoFocus;
     Vector3 panOffset;
+    Vector3 freeFocus;
     Vector3 fpSmoothedPosition;
     float yaw;
-    float pitch = 10f;
+    float pitch = 0f;
     CameraSwitcher.Mode lastMode;
     bool modeKnown;
     bool? labelShowsIsometric;
+    CinemachineBrain brain;
+    float transitionEndTime;
+    Renderer[] playerRenderers;
+    bool? playerModelVisible;
 
     void Awake()
     {
         if (mainCamera == null) mainCamera = Camera.main;
         if (switcher == null) switcher = GetComponent<CameraSwitcher>();
 
+        if (mainCamera != null) brain = mainCamera.GetComponent<CinemachineBrain>();
+
+        // Satu blend EaseInOut yang tegas: kamera mengalir sekali dari pose lama ke pose baru.
+        if (brain != null)
+        {
+            brain.DefaultBlend = new CinemachineBlendDefinition(
+                CinemachineBlendDefinition.Styles.EaseInOut,
+                Mathf.Max(0.05f, transitionDuration));
+        }
+
+        // Kamera di-drive manual oleh script ini. Tanpa ini, Cinemachine memakai look-at
+        // target (Player) saat blend sehingga kamera "menoleh" lalu balik arah di tengah transisi.
+        if (isoCam != null) isoCam.BlendHint |= CinemachineCore.BlendHints.IgnoreTarget;
+        if (fpCam != null) fpCam.BlendHint |= CinemachineCore.BlendHints.IgnoreTarget;
+
         if (player == null)
         {
             GameObject playerObject = GameObject.FindWithTag("Player");
             if (playerObject != null) player = playerObject.transform;
         }
+
+        if (player != null) playerRenderers = player.GetComponentsInChildren<Renderer>(true);
 
         if (disableSampleCameraInput) DisableSampleCameraControls();
 
@@ -78,7 +119,7 @@ public class MobileCameraRig : MonoBehaviour
 
         yaw = player != null ? player.eulerAngles.y : 0f;
         isoFocus = player != null ? player.position : Vector3.zero;
-        fpSmoothedPosition = player != null ? player.position + shoulderOffset : Vector3.zero;
+        fpSmoothedPosition = player != null ? player.position + fpEyeOffset : Vector3.zero;
 
         UpdateLabel();
     }
@@ -102,14 +143,79 @@ public class MobileCameraRig : MonoBehaviour
         if (IsIsometric) UpdateIsometric();
         else UpdateFirstPerson();
 
+        UpdatePlayerModelVisibility();
         UpdateLabel();
+    }
+
+    /// <summary>
+    /// Kamera FPS berada tepat di kepala Player, jadi model karakter disembunyikan
+    /// saat FPS dan dimunculkan lagi saat isometric.
+    /// </summary>
+    void UpdatePlayerModelVisibility()
+    {
+        if (!hidePlayerModelInFirstPerson || playerRenderers == null) return;
+
+        bool visible = IsIsometric;
+        if (playerModelVisible.HasValue && playerModelVisible.Value == visible) return;
+
+        playerModelVisible = visible;
+        for (int i = 0; i < playerRenderers.Length; i++)
+            if (playerRenderers[i] != null) playerRenderers[i].enabled = visible;
     }
 
     bool IsIsometric => switcher == null || switcher.CurrentMode == CameraSwitcher.Mode.Isometric;
 
+    /// <summary>Titik fokus kamera isometrik saat ini (world space).</summary>
+    public Vector3 FocusPoint => isoFocus;
+
+    /// <summary>
+    /// [Isometric] Aktifkan geser bebas saat edit mode. Kamera berhenti mengikuti Player
+    /// dan bisa di-pan ke seluruh area tanam.
+    /// </summary>
+    public void SetFreePan(bool value)
+    {
+        if (freePan == value) return;
+
+        freePan = value;
+
+        if (value)
+        {
+            freeFocus = isoFocus;
+        }
+        else if (player != null)
+        {
+            // Kembali mengikuti Player tanpa "loncat": pan offset dihitung dari fokus sekarang.
+            Vector3 delta = isoFocus - player.position;
+            delta.y = 0f;
+            panOffset = Vector3.ClampMagnitude(delta, isoPanRadius);
+        }
+    }
+
     void UpdateIsometric()
     {
-        Vector3 targetFocus = player.position + panOffset;
+        Vector3 targetFocus;
+
+        if (freePan)
+        {
+            if (player != null)
+            {
+                Vector3 delta = freeFocus - player.position;
+                delta.y = 0f;
+                if (delta.magnitude > freePanRadius)
+                    freeFocus = player.position + delta.normalized * freePanRadius;
+
+                targetFocus = new Vector3(freeFocus.x, player.position.y, freeFocus.z);
+            }
+            else
+            {
+                targetFocus = freeFocus;
+            }
+        }
+        else
+        {
+            targetFocus = player.position + panOffset;
+        }
+
         float t = 1f - Mathf.Exp(-isoFollowDamping * Time.deltaTime);
         isoFocus = Vector3.Lerp(isoFocus, targetFocus, t);
 
@@ -124,7 +230,7 @@ public class MobileCameraRig : MonoBehaviour
     void UpdateFirstPerson()
     {
         Quaternion yawRotation = Quaternion.Euler(0f, yaw, 0f);
-        Vector3 desired = player.position + yawRotation * shoulderOffset;
+        Vector3 desired = player.position + yawRotation * fpEyeOffset;
 
         // Posisi sedikit di-damp supaya tidak "jitter" saat karakter berjalan,
         // rotasi tetap instan supaya aiming terasa responsif.
@@ -151,6 +257,9 @@ public class MobileCameraRig : MonoBehaviour
 
     public void OnSwipe(Vector2 deltaPixels)
     {
+        // Jangan ganggu pan transisi: satu gerakan saja sampai blend selesai.
+        if (lockDuringTransition && IsTransitioning) return;
+
         if (IsIsometric)
         {
             // Pan: geser titik fokus kamera di bidang XZ, tanpa rotasi.
@@ -158,7 +267,9 @@ public class MobileCameraRig : MonoBehaviour
             Quaternion flatRotation = Quaternion.Euler(0f, isoYaw, 0f);
             Vector3 move = (flatRotation * Vector3.right * deltaPixels.x
                             + flatRotation * Vector3.forward * deltaPixels.y) * worldPerPixel;
-            panOffset = Vector3.ClampMagnitude(panOffset + move, isoPanRadius);
+
+            if (freePan) freeFocus += move;
+            else panOffset = Vector3.ClampMagnitude(panOffset + move, isoPanRadius);
         }
         else
         {
@@ -172,20 +283,31 @@ public class MobileCameraRig : MonoBehaviour
     // ------------------------------------------------------------------
     public void ToggleCameraMode()
     {
-        if (switcher != null) switcher.ToggleMode();
+        // Satu pan per transisi: tap saat kamera masih bergerak diabaikan.
+        if (lockDuringTransition && IsTransitioning) return;
+        if (switcher == null) return;
+
+        switcher.ToggleMode();
+        transitionEndTime = Time.unscaledTime + Mathf.Max(0.05f, transitionDuration);
     }
+
+    /// <summary>True selama kamera masih dalam pan transisi.</summary>
+    public bool IsTransitioning =>
+        Time.unscaledTime < transitionEndTime || (brain != null && brain.IsBlending);
 
     void HandleModeChanged(CameraSwitcher.Mode mode)
     {
         if (mode == CameraSwitcher.Mode.FirstPerson && player != null)
         {
+            freePan = false;
             // Mulai dari arah hadap karakter supaya kamera tidak "loncat".
             yaw = player.eulerAngles.y;
             pitch = Mathf.Clamp(pitch, pitchLimits.x, pitchLimits.y);
-            fpSmoothedPosition = player.position + Quaternion.Euler(0f, yaw, 0f) * shoulderOffset;
+            fpSmoothedPosition = player.position + Quaternion.Euler(0f, yaw, 0f) * fpEyeOffset;
         }
         else
         {
+            freePan = false;
             panOffset = Vector3.zero;
             if (player != null) isoFocus = player.position;
         }
