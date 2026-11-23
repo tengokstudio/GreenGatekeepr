@@ -7,8 +7,7 @@ using UnityEngine.UI;
 ///  - Tombol EDIT di kanan atas (hanya tampil di mode isometrik).
 ///  - Grid samar mengikuti fokus kamera (bukan player) supaya area tanam bisa digeser bebas.
 ///  - Pilih item pohon di inventory, lalu tap sel grid untuk menanam (stok -1).
-///  - Tap pohon dewasa untuk menghapusnya dan mengembalikan 1 bibit ke inventory.
-///  - Selama edit mode panel rawat pohon dimatikan; hanya tanam & hapus.
+///  - Tap pohon yang ditanam untuk menghapusnya dan mengembalikan 1 item ke inventory.
 ///  - Selama edit mode, spawner & AI hama di-pause lewat <see cref="PestDefenseGame.EditMode"/>.
 /// </summary>
 [DisallowMultipleComponent]
@@ -45,7 +44,7 @@ public class TreeEditController : MonoBehaviour
 
     bool editing;
     float hintUntil;
-    string defaultHint = "Pilih bibit di inventory, lalu tap tengah sel grid untuk menanam. Tap pohon dewasa untuk menghapus.";
+    string defaultHint = "Pilih pohon di inventory, lalu tap grid untuk menanam. Tap pohon tanam untuk menghapus.";
 
     public bool IsEditing => editing;
 
@@ -148,7 +147,7 @@ public class TreeEditController : MonoBehaviour
         }
 
         UpdateButtonLabel();
-        ShowHint("EDIT MODE: pilih bibit lalu tap tengah sel. Tap pohon dewasa untuk hapus.", 3f);
+        ShowHint("EDIT MODE: pilih pohon lalu tap grid. Tap pohon tanam untuk hapus.", 3f);
 
         // Langsung buka inventory supaya player tinggal memilih variasi pohon.
         if (inventoryUI != null && !inventoryUI.IsOpen) inventoryUI.Open();
@@ -221,16 +220,6 @@ public class TreeEditController : MonoBehaviour
 
         if (tree == null || !tree.plantedByPlayer || !tree.IsAlive) return false;
 
-        // Pohon yang masih tumbuh belum bisa dihapus; panel rawat sengaja
-        // tidak dibuka selama edit mode.
-        TreeGrowth growth = tree.GetComponent<TreeGrowth>();
-        if (growth != null && !growth.IsMature)
-        {
-            ShowHint("Pohon masih " + growth.StageName +
-                     ". Selesaikan perawatannya di luar edit mode dulu.", 2.5f);
-            return true;
-        }
-
         RemovePlantedTree(tree);
         return true;
     }
@@ -281,7 +270,7 @@ public class TreeEditController : MonoBehaviour
 
     void RemovePlantedTree(TreeDurability tree)
     {
-        string itemId = !string.IsNullOrEmpty(tree.seedItemId) ? tree.seedItemId : tree.lootItemId;
+        string itemId = tree.lootItemId;
 
         if (game == null) game = PestDefenseGame.Instance;
         if (game != null) game.UnregisterTree(tree);
@@ -293,10 +282,10 @@ public class TreeEditController : MonoBehaviour
         }
 
         if (catalog == null) catalog = FindFirstObjectByType<TreeCatalog>();
-        TreeVariant variant = catalog != null ? catalog.GetBySeed(itemId) : null;
+        TreeVariant variant = catalog != null ? catalog.Get(itemId) : null;
         string label = variant != null ? variant.displayName : itemId;
 
-        ShowHint("Dihapus: " + label + " (bibit kembali ke inventory).", 2f);
+        ShowHint("Dihapus: " + label + " (kembali ke inventory).", 2f);
 
         StartCoroutine(ShrinkAndRemove(tree));
     }
@@ -340,15 +329,15 @@ public class TreeEditController : MonoBehaviour
         string itemId = inventoryUI != null ? inventoryUI.SelectedItemId : null;
         if (string.IsNullOrEmpty(itemId))
         {
-            ShowHint("Pilih bibit pohon di inventory dulu, lalu tap tengah sel grid.", 2.5f);
+            ShowHint("Pilih pohon di inventory dulu, lalu tap grid.", 2.5f);
             return false;
         }
 
         if (catalog == null) catalog = FindFirstObjectByType<TreeCatalog>();
-        TreeVariant variant = catalog != null ? catalog.GetBySeed(itemId) : null;
+        TreeVariant variant = catalog != null ? catalog.Get(itemId) : null;
         if (variant == null)
         {
-            ShowHint("Item ini bukan bibit pohon. Pilih salah satu bibit.", 2.5f);
+            ShowHint("Item ini bukan pohon. Pilih salah satu variasi pohon.", 2.5f);
             return false;
         }
 
@@ -383,7 +372,7 @@ public class TreeEditController : MonoBehaviour
 
         if (!inventory.RemoveItem(itemId, 1))
         {
-            ShowHint("Stok bibit habis.", 2f);
+            ShowHint("Stok pohon habis.", 2f);
             return false;
         }
 
@@ -400,26 +389,22 @@ public class TreeEditController : MonoBehaviour
         tree.name = "Planted_" + variant.id;
         tree.plantedByPlayer = true;
 
-        TreeGrowth growth = tree.gameObject.AddComponent<TreeGrowth>();
-        growth.Initialize(tree, variant);
-
         if (game == null) game = PestDefenseGame.Instance;
         if (game != null) game.RegisterTree(tree);
 
         int left = inventory.CountItem(itemId);
         ShowHint(left > 0
-            ? "Ditanam: Bibit " + TreeLabel(variant) + " (sisa " + left + "). Tap untuk rawat."
-            : "Ditanam: Bibit " + TreeLabel(variant) + ". Stok bibit habis.", 2.5f);
+            ? "Ditanam: " + variant.displayName + " (sisa " + left + ")"
+            : "Ditanam: " + variant.displayName + ". Stok habis.", 2f);
 
         return true;
     }
 
     Vector3 SnapToGrid(Vector3 point)
     {
-        // Titik tanam = TENGAH sel, bukan perpotongan garis grid.
         float size = cellSize > 0.01f ? cellSize : 2f;
-        float x = Mathf.Floor(point.x / size) * size + size * 0.5f;
-        float z = Mathf.Floor(point.z / size) * size + size * 0.5f;
+        float x = Mathf.Round(point.x / size) * size;
+        float z = Mathf.Round(point.z / size) * size;
         return new Vector3(x, 0f, z);
     }
 
@@ -478,28 +463,19 @@ public class TreeEditController : MonoBehaviour
         }
 
         if (catalog == null) catalog = FindFirstObjectByType<TreeCatalog>();
-        TreeVariant variant = catalog != null ? catalog.GetBySeed(itemId) : null;
+        TreeVariant variant = catalog != null ? catalog.Get(itemId) : null;
 
         if (variant == null)
         {
-            ShowHint("Item ini bukan bibit pohon. Pilih salah satu bibit.", 2.5f);
+            ShowHint("Item ini bukan pohon. Pilih salah satu variasi pohon.", 2.5f);
             return;
         }
 
         int count = inventory != null ? inventory.CountItem(itemId) : 0;
-        ShowHint("Tap tengah sel untuk menanam Bibit " + TreeLabel(variant) + " (stok " + count + ").", 3f);
+        ShowHint("Tap grid untuk menanam " + variant.displayName + " (stok " + count + ").", 3f);
 
         // Inventory menutupi layar (dim), jadi tutup otomatis setelah memilih pohon.
         if (inventoryUI != null && inventoryUI.IsOpen) inventoryUI.Close();
-    }
-
-    static string TreeLabel(TreeVariant variant)
-    {
-        if (variant == null) return "Pohon";
-
-        string name = variant.displayName;
-        if (name.StartsWith("Pohon ")) name = name.Substring(6);
-        return name;
     }
 
     public void ShowHint(string message, float duration)

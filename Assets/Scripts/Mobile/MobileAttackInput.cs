@@ -31,9 +31,6 @@ public class MobileAttackInput : MonoBehaviour
     [Tooltip("Jeda minimum antar tembakan (detik).")]
     [Range(0f, 2f)] public float cooldown = 0.25f;
 
-    [Tooltip("Saat kapak aktif, tombol ATK dipakai untuk menebang (peluru di-suppress).")]
-    public bool suppressBullets;
-
     [Header("Bullet")]
     public float bulletSpeed = 60f;
     public float bulletLifetime = 3f;
@@ -76,12 +73,6 @@ public class MobileAttackInput : MonoBehaviour
 
         if (animator != null && !string.IsNullOrEmpty(animatorTrigger))
             animator.SetTrigger(animatorTrigger);
-
-        if (suppressBullets)
-        {
-            onAttack?.Invoke();
-            return;
-        }
 
         Fire();
 

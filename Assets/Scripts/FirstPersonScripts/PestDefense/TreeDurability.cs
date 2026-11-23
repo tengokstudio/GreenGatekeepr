@@ -3,9 +3,8 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// Durability pohon. Menerima damage dari hama, menampilkan health bar
+/// Durability pohon. Menerima damage dari hama (dan peluru), menampilkan health bar
 /// 3D di atas pohon, lalu roboh + hilang saat HP habis.
-/// Pohon yang hancur karena hama tidak memberi loot apa pun.
 /// </summary>
 [DisallowMultipleComponent]
 public class TreeDurability : MonoBehaviour, IDamageable
@@ -28,20 +27,10 @@ public class TreeDurability : MonoBehaviour, IDamageable
     public float fallDuration = 0.85f;
     public float fallAngle = 82f;
 
-    [Header("Inventory Loot (tidak dipakai lagi)")]
-    [Tooltip("Disimpan supaya data scene lama tetap valid. Tidak ada loot saat pohon hancur.")]
-    public string lootItemId = "";
+    [Header("Inventory Loot (General)")]
+    [Tooltip("Item yang masuk inventory saat pohon ini hancur.")]
+    public string lootItemId = "tree_oak";
     public bool giveLootToInventory = true;
-
-    [Tooltip("Komoditas unik pohon ini (Getah Oak, Getah Pinus, Air Birch, Kelopak Sakura).")]
-    public string commodityItemId;
-    public int commodityYield = 1;
-
-    [Tooltip("Jumlah kayu (tidak dipakai lagi).")]
-    public int woodYield = 2;
-
-    [Tooltip("Bibit yang dikembalikan saat pohon tanam dihapus lewat edit mode.")]
-    public string seedItemId;
 
     [Tooltip("True kalau pohon ini ditanam player lewat edit mode (bisa dihapus lagi).")]
     public bool plantedByPlayer;
@@ -60,6 +49,7 @@ public class TreeDurability : MonoBehaviour, IDamageable
     Vector3 fillBasePosition;
     MaterialPropertyBlock block;
     bool destroyed;
+    bool lootOnDestroy = true;
 
     public float CurrentHealth => currentHealth;
     public float HealthRatio => maxHealth <= 0f ? 0f : Mathf.Clamp01(currentHealth / maxHealth);
@@ -84,8 +74,8 @@ public class TreeDurability : MonoBehaviour, IDamageable
     }
 
     /// <summary>
-    /// <paramref name="allowLoot"/> dipertahankan demi kompatibilitas pemanggil lama.
-    /// Saat ini pohon yang hancur tidak pernah memberi loot.
+    /// <paramref name="allowLoot"/> = false dipakai hama, supaya pohon yang dihancurkan
+    /// hama tidak masuk inventory.
     /// </summary>
     public void ApplyDamage(float amount, Vector3 hitPoint, bool allowLoot)
     {
@@ -96,26 +86,10 @@ public class TreeDurability : MonoBehaviour, IDamageable
         onDamaged?.Invoke();
 
         if (currentHealth <= 0f)
-            DestroyTree();
-    }
-
-    /// <summary>Dipakai TreeGrowth saat pohon naik tahap (HP maksimum ikut naik).</summary>
-    public void SetMaxHealth(float value, bool refill)
-    {
-        maxHealth = Mathf.Max(1f, value);
-
-        if (refill)
-            currentHealth = maxHealth;
-        else
-            currentHealth = Mathf.Min(currentHealth, maxHealth);
-
-        if (healthBarFill != null && fillBaseScale == Vector3.zero)
         {
-            fillBaseScale = healthBarFill.localScale;
-            fillBasePosition = healthBarFill.localPosition;
+            lootOnDestroy = allowLoot;
+            DestroyTree();
         }
-
-        RefreshVisuals();
     }
 
     void RefreshVisuals()
@@ -158,6 +132,9 @@ public class TreeDurability : MonoBehaviour, IDamageable
             if (colliders[i] != null) colliders[i].enabled = false;
 
         if (healthBarRoot != null) healthBarRoot.SetActive(false);
+
+        if (giveLootToInventory && lootOnDestroy && !string.IsNullOrEmpty(lootItemId) && InventorySystem.Instance != null)
+            InventorySystem.Instance.AddItem(lootItemId, 1);
 
         onDestroyed?.Invoke();
         StartCoroutine(FallRoutine());
