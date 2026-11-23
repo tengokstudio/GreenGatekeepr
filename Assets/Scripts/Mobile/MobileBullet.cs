@@ -83,7 +83,10 @@ public class MobileBullet : MonoBehaviour
         hitDone = true;
 
         IDamageable damageable = hit.collider != null ? hit.collider.GetComponentInParent<IDamageable>() : null;
-        if (damageable != null) damageable.ApplyDamage(damage, hit.point);
+
+        // Peluru tidak merusak pohon. Penebangan hanya lewat kapak (mode FPS).
+        if (damageable != null && !(damageable is TreeDurability))
+            damageable.ApplyDamage(damage, hit.point);
 
         onHit?.Invoke(hit);
         Destroy(gameObject);
