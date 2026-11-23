@@ -116,11 +116,10 @@ public static class PestDefenseSetup
             spawner.pestPrefab = pestPrefab;
             spawner.pestParent = pestsParent.transform;
             spawner.game = game;
-            spawner.firstSpawnDelay = 2f;
-            spawner.spawnInterval = 12f;
+            spawner.firstSpawnDelay = 1f;
+            spawner.spawnInterval = 5f;
             spawner.spawnDuration = 60f;
             spawner.spawnRadius = 1.6f;
-            spawner.maxAlive = 4;
         }
 
         EditorSceneManager.MarkSceneDirty(scene);
@@ -128,7 +127,7 @@ public static class PestDefenseSetup
         AssetDatabase.SaveAssets();
 
         Debug.Log("[PestDefenseSetup] Selesai: 4 pohon (HP " + TreeHealth + "), 2 sarang hama, prefab " + PrefabPath +
-                  ", HUD " + hudRoot.name + ". Hama spawn tiap 12 detik (maks 4 hidup per sarang) selama 60 detik. Scene disimpan.");
+                  ", HUD " + hudRoot.name + ". Hama spawn tiap 5 detik selama 60 detik. Scene disimpan.");
     }
 
     static TreeDurability CreateTree(string name, Vector3 position, Transform parent,
@@ -140,18 +139,9 @@ public static class PestDefenseSetup
 
         TreeDurability durability = tree.AddComponent<TreeDurability>();
         durability.maxHealth = variant != null ? variant.maxHealth : TreeHealth;
+        durability.lootItemId = variant != null ? variant.id : "tree_oak";
         durability.giveLootToInventory = true;
         durability.alwaysShowHealthBar = true;
-
-        if (variant != null)
-        {
-            variant.EnsureDefaults();
-            durability.lootItemId = "";
-            durability.commodityItemId = variant.commodityItemId;
-            durability.commodityYield = 1;
-            durability.woodYield = Mathf.Max(1, variant.woodYield);
-            durability.seedItemId = variant.seedItemId;
-        }
 
         GameObject trunk = CreatePrimitive(PrimitiveType.Cylinder, "Trunk", tree.transform, trunkMat, true);
         trunk.transform.localPosition = new Vector3(0f, 1.6f, 0f);

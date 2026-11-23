@@ -1,11 +1,9 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
 /// Sarang hama. Memunculkan satu hama setiap <see cref="spawnInterval"/> detik,
 /// berhenti total setelah <see cref="spawnDuration"/> detik ATAU semua pohon habis.
-/// Jumlah hama hidup dibatasi <see cref="maxAlive"/> supaya layar tidak penuh.
 /// </summary>
 [DisallowMultipleComponent]
 public class PestSpawner : MonoBehaviour
@@ -25,10 +23,6 @@ public class PestSpawner : MonoBehaviour
     [Tooltip("Berapa lama sarang terus spawn sebelum berhenti (detik).")]
     public float spawnDuration = 60f;
 
-    [Header("Batas")]
-    [Tooltip("Maksimum hama hidup dari sarang ini. Spawn ditahan kalau sudah penuh.")]
-    public int maxAlive = 4;
-
     [Header("Placement")]
     [Tooltip("Hama muncul di dalam radius ini dari sarang (meter).")]
     public float spawnRadius = 1.6f;
@@ -46,25 +40,8 @@ public class PestSpawner : MonoBehaviour
     bool stopped;
     int spawnedCount;
 
-    readonly List<PestEnemy> alivePests = new List<PestEnemy>();
-
     public bool IsStopped => stopped;
     public int SpawnedCount => spawnedCount;
-
-    /// <summary>Jumlah hama yang masih hidup (mayat tidak dihitung).</summary>
-    public int AliveCount
-    {
-        get
-        {
-            for (int i = alivePests.Count - 1; i >= 0; i--)
-            {
-                PestEnemy pest = alivePests[i];
-                if (pest == null || !pest.IsAlive) alivePests.RemoveAt(i);
-            }
-
-            return alivePests.Count;
-        }
-    }
 
     void Start()
     {
@@ -123,9 +100,6 @@ public class PestSpawner : MonoBehaviour
             // Jangan menumpuk spawn setelah frame yang sangat lambat.
             if (Time.time - startTime > spawnDuration) break;
 
-            // Sudah penuh: tahan spawn sampai ada hama yang mati.
-            if (maxAlive > 0 && AliveCount >= maxAlive) break;
-
             SpawnPest();
         }
     }
@@ -144,7 +118,6 @@ public class PestSpawner : MonoBehaviour
         PestEnemy pest = pestObject.GetComponent<PestEnemy>();
         if (pest != null)
         {
-            alivePests.Add(pest);
             pest.Initialize(game);
             onSpawned?.Invoke(pest);
         }

@@ -159,7 +159,7 @@ public static class TreeEditSetup
         hintBackground.raycastTarget = false;
 
         Text hintText = CreateText("Text", hintRect,
-            "Pilih bibit di inventory, lalu tap tengah sel grid untuk menanam. Tap pohon dewasa untuk menghapus.",
+            "Pilih pohon di inventory, lalu tap grid untuk menanam. Tap pohon tanam untuk menghapus.",
             26, TextAnchor.MiddleCenter);
         RectTransform hintTextRect = hintText.rectTransform;
         hintTextRect.anchorMin = Vector2.zero;
