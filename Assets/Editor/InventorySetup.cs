@@ -57,22 +57,34 @@ public static class InventorySetup
         system.rows = 8;
         system.itemDefinitions = new InventoryItemDefinition[]
         {
-            new InventoryItemDefinition { id = "tree_oak", displayName = "Pohon Oak", color = new Color(0.30f, 0.62f, 0.26f), maxStack = 10 },
-            new InventoryItemDefinition { id = "tree_pine", displayName = "Pohon Pinus", color = new Color(0.16f, 0.42f, 0.22f), maxStack = 10 },
-            new InventoryItemDefinition { id = "tree_birch", displayName = "Pohon Birch", color = new Color(0.55f, 0.76f, 0.32f), maxStack = 10 },
-            new InventoryItemDefinition { id = "tree_blossom", displayName = "Pohon Sakura", color = new Color(0.95f, 0.55f, 0.72f), maxStack = 10 },
-            new InventoryItemDefinition { id = "pest_corpse", displayName = "Mayat Hama", color = new Color(0.58f, 0.24f, 0.72f), maxStack = 20 },
-            new InventoryItemDefinition { id = "wood", displayName = "Kayu", color = new Color(0.55f, 0.38f, 0.20f), maxStack = 50 },
-            new InventoryItemDefinition { id = "stone", displayName = "Batu", color = new Color(0.55f, 0.58f, 0.62f), maxStack = 50 }
+            new InventoryItemDefinition { id = GameItems.SeedOak, displayName = "Bibit Oak", color = new Color(0.30f, 0.62f, 0.26f), maxStack = 20 },
+            new InventoryItemDefinition { id = GameItems.SeedPine, displayName = "Bibit Pinus", color = new Color(0.16f, 0.42f, 0.22f), maxStack = 20 },
+            new InventoryItemDefinition { id = GameItems.SeedBirch, displayName = "Bibit Birch", color = new Color(0.55f, 0.76f, 0.32f), maxStack = 20 },
+            new InventoryItemDefinition { id = GameItems.SeedBlossom, displayName = "Bibit Sakura", color = new Color(0.95f, 0.55f, 0.72f), maxStack = 20 },
+
+            new InventoryItemDefinition { id = GameItems.Fertilizer, displayName = "Pupuk", color = new Color(0.45f, 0.62f, 0.25f), maxStack = 30 },
+            new InventoryItemDefinition { id = GameItems.WateringCan, displayName = "Penyiram", color = new Color(0.30f, 0.55f, 0.85f), maxStack = 1 },
+            new InventoryItemDefinition { id = GameItems.SunLamp, displayName = "Lampu Matahari", color = new Color(1f, 0.85f, 0.30f), maxStack = 1 },
+
+            new InventoryItemDefinition { id = GameItems.PestCorpse, displayName = "Mayat Hama", color = new Color(0.58f, 0.24f, 0.72f), maxStack = 20 },
+            new InventoryItemDefinition { id = GameItems.Wood, displayName = "Kayu", color = new Color(0.55f, 0.38f, 0.20f), maxStack = 50 },
+
+            new InventoryItemDefinition { id = GameItems.GetahOak, displayName = "Getah Oak", color = new Color(0.78f, 0.55f, 0.16f), maxStack = 30 },
+            new InventoryItemDefinition { id = GameItems.GetahPinus, displayName = "Getah Pinus", color = new Color(0.52f, 0.36f, 0.12f), maxStack = 30 },
+            new InventoryItemDefinition { id = GameItems.AirBirch, displayName = "Air Birch", color = new Color(0.55f, 0.85f, 0.92f), maxStack = 30 },
+            new InventoryItemDefinition { id = GameItems.KelopakSakura, displayName = "Kelopak Sakura", color = new Color(1f, 0.62f, 0.80f), maxStack = 30 }
         };
 
-        // [General] 2 pohon dari tiap variasi supaya edit mode bisa langsung dites.
+        // [General] Stok awal: 2 bibit tiap variasi + alat permanen + pupuk.
         system.startingItems = new StartingItem[]
         {
-            new StartingItem { id = "tree_oak", amount = 2 },
-            new StartingItem { id = "tree_pine", amount = 2 },
-            new StartingItem { id = "tree_birch", amount = 2 },
-            new StartingItem { id = "tree_blossom", amount = 2 }
+            new StartingItem { id = GameItems.SeedOak, amount = 2 },
+            new StartingItem { id = GameItems.SeedPine, amount = 2 },
+            new StartingItem { id = GameItems.SeedBirch, amount = 2 },
+            new StartingItem { id = GameItems.SeedBlossom, amount = 2 },
+            new StartingItem { id = GameItems.WateringCan, amount = 1 },
+            new StartingItem { id = GameItems.SunLamp, amount = 1 },
+            new StartingItem { id = GameItems.Fertilizer, amount = 6 }
         };
 
         // ---------------- Canvas ----------------
