@@ -1,0 +1,67 @@
+using UnityEngine;
+using UnityEngine.Events;
+
+/// <summary>
+/// Tombol attack untuk mode first-person.
+/// Tombol hanya tampil saat mode FPS, dan memanggil event onAttack (plus trigger Animator
+/// bila diisi). Scene ini belum punya sistem damage/proyektil, jadi event inilah hook-nya.
+/// </summary>
+[DisallowMultipleComponent]
+public class MobileAttackInput : MonoBehaviour
+{
+    [Header("References")]
+    public CameraSwitcher switcher;
+
+    [Tooltip("Root tombol attack yang ditampilkan/disembunyikan otomatis.")]
+    public GameObject buttonRoot;
+
+    public Animator animator;
+
+    [Header("Attack")]
+    [Tooltip("Nama trigger Animator. Kosongkan kalau tidak dipakai (biar tidak ada warning).")]
+    public string animatorTrigger = "";
+
+    [Tooltip("Jeda minimum antar attack (detik).")]
+    [Range(0f, 2f)] public float cooldown = 0.25f;
+
+    [Tooltip("Dipanggil setiap kali tombol attack ditekan (setelah lolos cooldown).")]
+    public UnityEvent onAttack;
+
+    float nextAttackTime;
+    bool? buttonVisible;
+
+    void Awake()
+    {
+        if (animator == null) animator = GetComponentInChildren<Animator>(true);
+        if (switcher == null) switcher = FindFirstObjectByType<CameraSwitcher>();
+        RefreshButton();
+    }
+
+    void LateUpdate()
+    {
+        RefreshButton();
+    }
+
+    void RefreshButton()
+    {
+        if (buttonRoot == null || switcher == null) return;
+
+        bool show = switcher.CurrentMode == CameraSwitcher.Mode.FirstPerson;
+        if (buttonVisible.HasValue && buttonVisible.Value == show) return;
+
+        buttonVisible = show;
+        buttonRoot.SetActive(show);
+    }
+
+    /// <summary>Dipanggil oleh Button.onClick.</summary>
+    public void Attack()
+    {
+        if (Time.time < nextAttackTime) return;
+        nextAttackTime = Time.time + Mathf.Max(0f, cooldown);
+
+        if (animator != null && !string.IsNullOrEmpty(animatorTrigger))
+            animator.SetTrigger(animatorTrigger);
+
+        onAttack?.Invoke();
+    }
+}
