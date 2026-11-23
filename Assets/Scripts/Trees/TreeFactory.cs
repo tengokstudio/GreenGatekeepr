@@ -39,7 +39,11 @@ public static class TreeFactory
         durability.foliageRenderers = foliage.ToArray();
         durability.healthyColor = variant.foliageColor;
         durability.damagedColor = new Color(0.55f, 0.42f, 0.12f);
-        durability.lootItemId = variant.id;
+        durability.lootItemId = "";
+        durability.commodityItemId = variant.commodityItemId;
+        durability.commodityYield = 1;
+        durability.woodYield = Mathf.Max(1, variant.woodYield);
+        durability.seedItemId = variant.seedItemId;
         durability.alwaysShowHealthBar = alwaysShowHealthBar;
 
         root.SetActive(true);
