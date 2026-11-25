@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -85,12 +85,13 @@ public static class PestDefenseSetup
         for (int i = 0; i < TreeX.Length; i++)
         {
             TreeVariant variant = variants[i % variants.Length];
-            Material variantTrunk = EnsureMaterial("TreeTrunk_" + variant.id, variant.trunkColor);
-            Material variantFoliage = EnsureMaterial("TreeFoliage_" + variant.id, variant.foliageColor);
-
             Vector3 position = new Vector3(TreeX[i], 0f, TreeZ);
-            trees.Add(CreateTree("Tree_" + (i + 1), position, treesParent.transform,
-                variantTrunk, variantFoliage, variant));
+
+            TreeDurability tree = TreeFactory.Create(variant, position, treesParent.transform, true);
+            if (tree == null) continue;
+
+            tree.name = "Tree_" + (i + 1);
+            trees.Add(tree);
         }
 
         // ---------------- 2 sarang ----------------
@@ -131,71 +132,6 @@ public static class PestDefenseSetup
                   ", HUD " + hudRoot.name + ". Hama spawn tiap 12 detik (maks 4 hidup per sarang) selama 60 detik. Scene disimpan.");
     }
 
-    static TreeDurability CreateTree(string name, Vector3 position, Transform parent,
-        Material trunkMat, Material foliageMat, TreeVariant variant)
-    {
-        GameObject tree = new GameObject(name);
-        tree.transform.SetParent(parent, false);
-        tree.transform.position = position;
-
-        TreeDurability durability = tree.AddComponent<TreeDurability>();
-        durability.maxHealth = variant != null ? variant.maxHealth : TreeHealth;
-        durability.giveLootToInventory = true;
-        durability.alwaysShowHealthBar = true;
-
-        if (variant != null)
-        {
-            variant.EnsureDefaults();
-            durability.lootItemId = "";
-            durability.commodityItemId = variant.commodityItemId;
-            durability.commodityYield = 1;
-            durability.woodYield = Mathf.Max(1, variant.woodYield);
-            durability.seedItemId = variant.seedItemId;
-        }
-
-        GameObject trunk = CreatePrimitive(PrimitiveType.Cylinder, "Trunk", tree.transform, trunkMat, true);
-        trunk.transform.localPosition = new Vector3(0f, 1.6f, 0f);
-        trunk.transform.localScale = new Vector3(0.55f, 1.6f, 0.55f);
-
-        List<Renderer> foliage = new List<Renderer>();
-        foliage.Add(CreateFoliage("Foliage_Low", new Vector3(0f, 3.5f, 0f), 2.6f, tree.transform, foliageMat));
-        foliage.Add(CreateFoliage("Foliage_Mid", new Vector3(0.65f, 4.4f, 0.15f), 1.8f, tree.transform, foliageMat));
-        foliage.Add(CreateFoliage("Foliage_Top", new Vector3(-0.5f, 4.35f, -0.25f), 1.5f, tree.transform, foliageMat));
-
-        GameObject barRoot = new GameObject("HealthBar");
-        barRoot.transform.SetParent(tree.transform, false);
-        barRoot.transform.localPosition = new Vector3(0f, 5.3f, 0f);
-        barRoot.AddComponent<HealthBarBillboard>();
-
-        Material bgMat = EnsureMaterial("HealthBarBG", new Color(0.07f, 0.07f, 0.08f));
-        Material fillMat = EnsureMaterial("HealthBarFill", new Color(0.30f, 0.90f, 0.32f), true);
-
-        GameObject bg = CreatePrimitive(PrimitiveType.Cube, "BG", barRoot.transform, bgMat, false);
-        bg.transform.localScale = new Vector3(1.8f, 0.26f, 0.02f);
-        bg.transform.localPosition = Vector3.zero;
-        DisableShadows(bg);
-
-        GameObject fill = CreatePrimitive(PrimitiveType.Cube, "Fill", barRoot.transform, fillMat, false);
-        fill.transform.localScale = new Vector3(1.7f, 0.18f, 0.03f);
-        fill.transform.localPosition = new Vector3(0f, 0f, -0.02f);
-        DisableShadows(fill);
-
-        durability.healthBarRoot = barRoot;
-        durability.healthBarFill = fill.transform;
-        durability.foliageRenderers = foliage.ToArray();
-        durability.healthyColor = variant != null ? variant.foliageColor : new Color(0.31f, 0.66f, 0.24f);
-        durability.damagedColor = new Color(0.55f, 0.42f, 0.12f);
-
-        return durability;
-    }
-
-    static Renderer CreateFoliage(string name, Vector3 localPosition, float diameter, Transform parent, Material material)
-    {
-        GameObject foliage = CreatePrimitive(PrimitiveType.Sphere, name, parent, material, false);
-        foliage.transform.localPosition = localPosition;
-        foliage.transform.localScale = Vector3.one * diameter;
-        return foliage.GetComponent<Renderer>();
-    }
 
     static PestSpawner CreateSpawner(string name, Vector3 position, Transform parent, Material nestMat,
         GameObject pestPrefab, Transform pestParent)

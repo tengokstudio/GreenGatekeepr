@@ -4,33 +4,35 @@ public enum TreeFoliageStyle
 {
     Round,
     Pine,
-    Birch,
-    Blossom
+    Palm
 }
 
 /// <summary>
 /// [General] Definisi satu jenis pohon. Dipakai oleh forest generator, edit mode,
 /// toko bibit, dekomposer, dan katalog item inventory supaya id/warna selalu konsisten.
+///
+/// Jenis pohon mengikuti isi folder Assets/3dAssets/pohon:
+///   pohon (bulat), pine (kerucut), sawit (palem).
 /// </summary>
 [System.Serializable]
 public class TreeVariant
 {
     [Header("Identitas")]
-    public string id = "tree_oak";
-    public string displayName = "Pohon Oak";
+    public string id = "tree_pohon";
+    public string displayName = "Pohon";
     public TreeFoliageStyle style = TreeFoliageStyle.Round;
 
     [Header("Ekonomi")]
     [Tooltip("Item bibit yang dibeli di toko dan ditanam dari inventory.")]
-    public string seedItemId = "seed_oak";
+    public string seedItemId = "seed_pohon";
 
     [Tooltip("Harga beli 1 bibit di toko (koin).")]
     public int seedPrice = 10;
 
     [Tooltip("Item komoditas unik yang didapat saat pohon ditebang.")]
-    public string commodityItemId = "getah_oak";
+    public string commodityItemId = "getah_pohon";
 
-    public string commodityName = "Getah Oak";
+    public string commodityName = "Getah Pohon";
 
     [Tooltip("Harga jual 1 komoditas di toko (koin).")]
     public int commodityPrice = 8;
@@ -39,6 +41,9 @@ public class TreeVariant
     public int woodYield = 2;
 
     [Header("Visual")]
+    [Tooltip("Famili model 3D: pohon / pine / sawit. Kosong = pohon prosedural.")]
+    public string modelFamily = "pohon";
+
     public Color foliageColor = new Color(0.30f, 0.62f, 0.26f);
     public Color trunkColor = new Color(0.42f, 0.29f, 0.16f);
 
@@ -53,13 +58,14 @@ public class TreeVariant
         {
             new TreeVariant
             {
-                id = "tree_oak",
-                displayName = "Pohon Oak",
+                id = "tree_pohon",
+                displayName = "Pohon",
                 style = TreeFoliageStyle.Round,
-                seedItemId = "seed_oak",
+                modelFamily = "pohon",
+                seedItemId = "seed_pohon",
                 seedPrice = 10,
-                commodityItemId = "getah_oak",
-                commodityName = "Getah Oak",
+                commodityItemId = "getah_pohon",
+                commodityName = "Getah Pohon",
                 commodityPrice = 8,
                 woodYield = 2,
                 foliageColor = new Color(0.30f, 0.62f, 0.26f),
@@ -74,6 +80,7 @@ public class TreeVariant
                 id = "tree_pine",
                 displayName = "Pohon Pinus",
                 style = TreeFoliageStyle.Pine,
+                modelFamily = "pine",
                 seedItemId = "seed_pine",
                 seedPrice = 12,
                 commodityItemId = "getah_pinus",
@@ -89,41 +96,40 @@ public class TreeVariant
             },
             new TreeVariant
             {
-                id = "tree_birch",
-                displayName = "Pohon Birch",
-                style = TreeFoliageStyle.Birch,
-                seedItemId = "seed_birch",
-                seedPrice = 12,
-                commodityItemId = "air_birch",
-                commodityName = "Air Birch",
-                commodityPrice = 10,
-                woodYield = 2,
-                foliageColor = new Color(0.55f, 0.76f, 0.32f),
-                trunkColor = new Color(0.85f, 0.83f, 0.76f),
-                trunkHeight = 4.2f,
-                trunkRadius = 0.35f,
-                maxHealth = 160f,
-                barHeight = 5.9f
-            },
-            new TreeVariant
-            {
-                id = "tree_blossom",
-                displayName = "Pohon Sakura",
-                style = TreeFoliageStyle.Blossom,
-                seedItemId = "seed_blossom",
+                id = "tree_sawit",
+                displayName = "Pohon Sawit",
+                style = TreeFoliageStyle.Palm,
+                modelFamily = "sawit",
+                seedItemId = "seed_sawit",
                 seedPrice = 15,
-                commodityItemId = "kelopak_sakura",
-                commodityName = "Kelopak Sakura",
+                commodityItemId = "nira_sawit",
+                commodityName = "Nira Sawit",
                 commodityPrice = 12,
                 woodYield = 2,
-                foliageColor = new Color(0.95f, 0.55f, 0.72f),
-                trunkColor = new Color(0.38f, 0.24f, 0.20f),
-                trunkHeight = 2.8f,
-                trunkRadius = 0.45f,
+                foliageColor = new Color(0.26f, 0.58f, 0.24f),
+                trunkColor = new Color(0.48f, 0.38f, 0.24f),
+                trunkHeight = 4.6f,
+                trunkRadius = 0.34f,
                 maxHealth = 180f,
-                barHeight = 4.9f
+                barHeight = 6.2f
             }
         };
+    }
+
+    /// <summary>
+    /// Famili model 3D yang dipakai. Data scene lama belum punya field ini,
+    /// jadi diturunkan dari <see cref="style"/>.
+    /// </summary>
+    public string ResolveModelFamily()
+    {
+        if (!string.IsNullOrEmpty(modelFamily)) return modelFamily;
+
+        switch (style)
+        {
+            case TreeFoliageStyle.Pine: return "pine";
+            case TreeFoliageStyle.Palm: return "sawit";
+            default: return "pohon";
+        }
     }
 
     /// <summary>
@@ -134,10 +140,10 @@ public class TreeVariant
     {
         switch (id)
         {
-            case "tree_oak":
-                if (string.IsNullOrEmpty(seedItemId)) seedItemId = "seed_oak";
-                if (string.IsNullOrEmpty(commodityItemId)) commodityItemId = "getah_oak";
-                if (string.IsNullOrEmpty(commodityName)) commodityName = "Getah Oak";
+            case "tree_pohon":
+                if (string.IsNullOrEmpty(seedItemId)) seedItemId = "seed_pohon";
+                if (string.IsNullOrEmpty(commodityItemId)) commodityItemId = "getah_pohon";
+                if (string.IsNullOrEmpty(commodityName)) commodityName = "Getah Pohon";
                 if (seedPrice <= 0) seedPrice = 10;
                 if (commodityPrice <= 0) commodityPrice = 8;
                 break;
@@ -150,18 +156,10 @@ public class TreeVariant
                 if (commodityPrice <= 0) commodityPrice = 8;
                 break;
 
-            case "tree_birch":
-                if (string.IsNullOrEmpty(seedItemId)) seedItemId = "seed_birch";
-                if (string.IsNullOrEmpty(commodityItemId)) commodityItemId = "air_birch";
-                if (string.IsNullOrEmpty(commodityName)) commodityName = "Air Birch";
-                if (seedPrice <= 0) seedPrice = 12;
-                if (commodityPrice <= 0) commodityPrice = 10;
-                break;
-
-            case "tree_blossom":
-                if (string.IsNullOrEmpty(seedItemId)) seedItemId = "seed_blossom";
-                if (string.IsNullOrEmpty(commodityItemId)) commodityItemId = "kelopak_sakura";
-                if (string.IsNullOrEmpty(commodityName)) commodityName = "Kelopak Sakura";
+            case "tree_sawit":
+                if (string.IsNullOrEmpty(seedItemId)) seedItemId = "seed_sawit";
+                if (string.IsNullOrEmpty(commodityItemId)) commodityItemId = "nira_sawit";
+                if (string.IsNullOrEmpty(commodityName)) commodityName = "Nira Sawit";
                 if (seedPrice <= 0) seedPrice = 15;
                 if (commodityPrice <= 0) commodityPrice = 12;
                 break;
@@ -169,5 +167,6 @@ public class TreeVariant
 
         if (woodYield <= 0) woodYield = 2;
         if (string.IsNullOrEmpty(displayName)) displayName = id;
+        if (string.IsNullOrEmpty(modelFamily)) modelFamily = ResolveModelFamily();
     }
 }

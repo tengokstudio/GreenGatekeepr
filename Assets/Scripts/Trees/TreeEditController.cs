@@ -5,8 +5,11 @@ using UnityEngine.UI;
 /// <summary>
 /// [Isometric] Edit mode untuk menata pohon.
 ///  - Tombol EDIT di kanan atas (hanya tampil di mode isometrik).
-///  - Grid samar mengikuti fokus kamera (bukan player) supaya area tanam bisa digeser bebas.
-///  - Pilih item pohon di inventory, lalu tap sel grid untuk menanam (stok -1).
+///  - Grid statis di tengah area tanam, garis tipis, tidak mengikuti kamera.
+///  - Lampu Matahari dipilih dari inventory lalu dipasang di sel grid; bibit hanya
+///    bisa ditanam di sel yang tersinari lampu (radius 10m).
+///  - Pilih bibit di inventory, lalu tap sel grid untuk menanam (stok -1).
+///    Bibit tidak akan tumbuh kalau belum disiram memakai Penyiram.
 ///  - Tap pohon dewasa untuk menghapusnya dan mengembalikan 1 bibit ke inventory.
 ///  - Selama edit mode panel rawat pohon dimatikan; hanya tanam & hapus.
 ///  - Selama edit mode, spawner & AI hama di-pause lewat <see cref="PestDefenseGame.EditMode"/>.
@@ -23,6 +26,7 @@ public class TreeEditController : MonoBehaviour
     public InventorySystem inventory;
     public TreeCatalog catalog;
     public GridOverlay grid;
+    public SunLampPlacer lampPlacer;
     public PestDefenseGame game;
     public Transform player;
     public Transform treesParent;
@@ -34,8 +38,8 @@ public class TreeEditController : MonoBehaviour
     public Text hintText;
 
     [Header("Placement")]
-    [Tooltip("Ukuran area tanam (mengikuti grid 100x100).")]
-    public float areaSize = 100f;
+    [Tooltip("Ukuran area tanam (mengikuti grid 60x60).")]
+    public float areaSize = 60f;
     public float cellSize = 2f;
     public float minTreeSpacing = 1.8f;
     public float minDistanceFromPlayer = 2f;
@@ -45,7 +49,8 @@ public class TreeEditController : MonoBehaviour
 
     bool editing;
     float hintUntil;
-    string defaultHint = "Pilih bibit di inventory, lalu tap tengah sel grid untuk menanam. Tap pohon dewasa untuk menghapus.";
+    float nextGridRefresh;
+    string defaultHint = "Pasang Lampu Matahari dulu, lalu pilih bibit dan tap sel yang tersinari. Tap pohon dewasa untuk menghapus.";
 
     public bool IsEditing => editing;
 
@@ -58,6 +63,7 @@ public class TreeEditController : MonoBehaviour
         if (inventoryUI == null) inventoryUI = FindFirstObjectByType<InventoryUI>();
         if (inventory == null) inventory = InventorySystem.Instance;
         if (catalog == null) catalog = FindFirstObjectByType<TreeCatalog>();
+        if (lampPlacer == null) lampPlacer = FindFirstObjectByType<SunLampPlacer>();
         if (game == null) game = PestDefenseGame.Instance;
 
         if (player == null)
@@ -97,10 +103,12 @@ public class TreeEditController : MonoBehaviour
         if (editing && switcher != null && switcher.CurrentMode != CameraSwitcher.Mode.Isometric)
             ExitEditMode();
 
-        if (editing && grid != null)
+        // [Isometric] Grid sengaja statis: tidak mengikuti fokus kamera.
+        // Warna sel diperbarui saat edit mode supaya hijau/merah mengikuti lampu & pohon.
+        if (editing && grid != null && Time.unscaledTime >= nextGridRefresh)
         {
-            Vector3 center = rig != null ? rig.FocusPoint : (player != null ? player.position : grid.transform.position);
-            grid.SetCenter(center);
+            nextGridRefresh = Time.unscaledTime + 0.2f;
+            grid.RefreshValidity();
         }
 
         if (hintRoot != null && hintRoot.activeSelf && Time.unscaledTime >= hintUntil)
@@ -142,13 +150,12 @@ public class TreeEditController : MonoBehaviour
 
         if (grid != null)
         {
-            Vector3 center = rig != null ? rig.FocusPoint : (player != null ? player.position : grid.transform.position);
-            grid.SetCenter(center);
+            grid.RefreshValidity(true);
             grid.SetVisible(true);
         }
 
         UpdateButtonLabel();
-        ShowHint("EDIT MODE: pilih bibit lalu tap tengah sel. Tap pohon dewasa untuk hapus.", 3f);
+        ShowHint("EDIT MODE: pasang Lampu Matahari dulu, lalu pilih bibit dan tap sel yang tersinari.", 3.5f);
 
         // Langsung buka inventory supaya player tinggal memilih variasi pohon.
         if (inventoryUI != null && !inventoryUI.IsOpen) inventoryUI.Open();
@@ -199,8 +206,18 @@ public class TreeEditController : MonoBehaviour
         if (switcher != null && switcher.CurrentMode != CameraSwitcher.Mode.Isometric) return false;
         if (inventoryUI != null && inventoryUI.IsOpen) return false;
 
+        // Saat Lampu Matahari dipilih, tap dipakai untuk pasang/ambil lampu,
+        // bukan untuk menghapus pohon.
+        if (IsLampSelected()) return TryPlaceFromScreen(screenPosition);
+
         if (TryRemovePlantedTree(screenPosition)) return true;
         return TryPlaceFromScreen(screenPosition);
+    }
+
+    bool IsLampSelected()
+    {
+        string id = inventoryUI != null ? inventoryUI.SelectedItemId : null;
+        return id == GameItems.SunLamp;
     }
 
     bool TryRemovePlantedTree(Vector2 screenPosition)
@@ -340,15 +357,7 @@ public class TreeEditController : MonoBehaviour
         string itemId = inventoryUI != null ? inventoryUI.SelectedItemId : null;
         if (string.IsNullOrEmpty(itemId))
         {
-            ShowHint("Pilih bibit pohon di inventory dulu, lalu tap tengah sel grid.", 2.5f);
-            return false;
-        }
-
-        if (catalog == null) catalog = FindFirstObjectByType<TreeCatalog>();
-        TreeVariant variant = catalog != null ? catalog.GetBySeed(itemId) : null;
-        if (variant == null)
-        {
-            ShowHint("Item ini bukan bibit pohon. Pilih salah satu bibit.", 2.5f);
+            ShowHint("Pilih Lampu Matahari atau bibit pohon di inventory dulu.", 2.5f);
             return false;
         }
 
@@ -364,7 +373,46 @@ public class TreeEditController : MonoBehaviour
 
         if (!InsideArea(position))
         {
-            ShowHint("Di luar area tanam (100x100).", 2f);
+            ShowHint("Di luar area tanam (" + Mathf.RoundToInt(areaSize) + "x" +
+                Mathf.RoundToInt(areaSize) + ").", 2f);
+            return false;
+        }
+
+        // Bangunan (toko, komposer, kolam) tidak boleh ditempeli item.
+        string building;
+        if (PlacementRules.IsTooCloseToBuilding(position, cellSize, out building))
+        {
+            ShowHint("Terlalu dekat dengan " + building + ". Beri jarak minimal 1 kotak.", 2.2f);
+            return false;
+        }
+
+        // Lampu Matahari: pasang / ambil lagi di sel ini.
+        if (itemId == GameItems.SunLamp)
+        {
+            if (lampPlacer == null) lampPlacer = FindFirstObjectByType<SunLampPlacer>();
+            if (lampPlacer == null)
+            {
+                ShowHint("Sistem Lampu Matahari belum terpasang di scene.", 2.5f);
+                return false;
+            }
+
+            bool ok = lampPlacer.ToggleAt(position, out string lampMessage);
+            ShowHint(lampMessage, 2.5f);
+            return ok;
+        }
+
+        if (catalog == null) catalog = FindFirstObjectByType<TreeCatalog>();
+        TreeVariant variant = catalog != null ? catalog.GetBySeed(itemId) : null;
+        if (variant == null)
+        {
+            ShowHint("Item ini bukan bibit pohon. Pilih bibit atau Lampu Matahari.", 2.5f);
+            return false;
+        }
+
+        if (lampPlacer == null) lampPlacer = FindFirstObjectByType<SunLampPlacer>();
+        if (lampPlacer != null && !lampPlacer.IsIlluminated(position))
+        {
+            ShowHint("Sel ini belum tersinari Lampu Matahari. Pasang lampu di dekatnya dulu.", 2.5f);
             return false;
         }
 
@@ -408,8 +456,8 @@ public class TreeEditController : MonoBehaviour
 
         int left = inventory.CountItem(itemId);
         ShowHint(left > 0
-            ? "Ditanam: Bibit " + TreeLabel(variant) + " (sisa " + left + "). Tap untuk rawat."
-            : "Ditanam: Bibit " + TreeLabel(variant) + ". Stok bibit habis.", 2.5f);
+            ? "Ditanam: Bibit " + TreeLabel(variant) + " (sisa " + left + "). Siram dengan Penyiram supaya tumbuh."
+            : "Ditanam: Bibit " + TreeLabel(variant) + ". Siram dengan Penyiram supaya tumbuh.", 3f);
 
         return true;
     }
@@ -420,7 +468,10 @@ public class TreeEditController : MonoBehaviour
         float size = cellSize > 0.01f ? cellSize : 2f;
         float x = Mathf.Floor(point.x / size) * size + size * 0.5f;
         float z = Mathf.Floor(point.z / size) * size + size * 0.5f;
-        return new Vector3(x, 0f, z);
+
+        // Ikuti tinggi tanah supaya pohon / lampu tidak melayang atau tenggelam.
+        float y = GridOverlay.SampleGroundHeight(new Vector3(x, 0f, z), 0f);
+        return new Vector3(x, y, z);
     }
 
     bool InsideArea(Vector3 position)
@@ -473,7 +524,19 @@ public class TreeEditController : MonoBehaviour
 
         if (string.IsNullOrEmpty(itemId))
         {
+            if (grid != null) grid.lampMode = false;
             ShowHint(defaultHint, 2.5f);
+            return;
+        }
+
+        if (grid != null) grid.lampMode = itemId == GameItems.SunLamp;
+
+        if (itemId == GameItems.SunLamp)
+        {
+            int lampCount = inventory != null ? inventory.CountItem(itemId) : 0;
+            ShowHint("Tap sel grid untuk memasang Lampu Matahari (stok " + lampCount +
+                     "). Tap lampu yang sudah terpasang untuk mengambilnya.", 3.5f);
+            if (inventoryUI != null && inventoryUI.IsOpen) inventoryUI.Close();
             return;
         }
 
@@ -482,12 +545,13 @@ public class TreeEditController : MonoBehaviour
 
         if (variant == null)
         {
-            ShowHint("Item ini bukan bibit pohon. Pilih salah satu bibit.", 2.5f);
+            ShowHint("Item ini bukan bibit pohon. Pilih bibit atau Lampu Matahari.", 2.5f);
             return;
         }
 
         int count = inventory != null ? inventory.CountItem(itemId) : 0;
-        ShowHint("Tap tengah sel untuk menanam Bibit " + TreeLabel(variant) + " (stok " + count + ").", 3f);
+        ShowHint("Tap sel yang tersinari lampu untuk menanam Bibit " + TreeLabel(variant) +
+                 " (stok " + count + ").", 3f);
 
         // Inventory menutupi layar (dim), jadi tutup otomatis setelah memilih pohon.
         if (inventoryUI != null && inventoryUI.IsOpen) inventoryUI.Close();

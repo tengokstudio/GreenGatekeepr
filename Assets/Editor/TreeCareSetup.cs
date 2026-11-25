@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Events;
 using UnityEditor.SceneManagement;
@@ -126,9 +126,11 @@ public static class TreeCareSetup
         {
             GameObject catalogObject = new GameObject("TreeCatalog");
             catalog = catalogObject.AddComponent<TreeCatalog>();
-            catalog.variants = TreeVariant.CreateDefaults();
         }
 
+        // [General] Katalog dibangun ulang supaya jenis pohon selalu sama dengan
+        // isi folder 3dAssets (Pohon, Pinus, Sawit). Data jenis lama tidak dipakai lagi.
+        catalog.variants = TreeVariant.CreateDefaults();
         catalog.EnsureDefaults();
         EditorUtility.SetDirty(catalog);
         return catalog;
@@ -142,36 +144,55 @@ public static class TreeCareSetup
         if (inventory.itemDefinitions != null)
         {
             for (int i = 0; i < inventory.itemDefinitions.Length; i++)
-                if (inventory.itemDefinitions[i] != null) definitions.Add(inventory.itemDefinitions[i]);
+            {
+                InventoryItemDefinition definition = inventory.itemDefinitions[i];
+                if (definition == null) continue;
+                if (IsObsoleteItem(definition.id)) continue;
+                definitions.Add(definition);
+            }
         }
 
-        EnsureDefinition(definitions, GameItems.SeedOak, "Bibit Oak", new Color(0.30f, 0.62f, 0.26f), 20);
+        EnsureDefinition(definitions, GameItems.SeedPohon, "Bibit Pohon", new Color(0.30f, 0.62f, 0.26f), 20);
         EnsureDefinition(definitions, GameItems.SeedPine, "Bibit Pinus", new Color(0.16f, 0.42f, 0.22f), 20);
-        EnsureDefinition(definitions, GameItems.SeedBirch, "Bibit Birch", new Color(0.55f, 0.76f, 0.32f), 20);
-        EnsureDefinition(definitions, GameItems.SeedBlossom, "Bibit Sakura", new Color(0.95f, 0.55f, 0.72f), 20);
+        EnsureDefinition(definitions, GameItems.SeedSawit, "Bibit Sawit", new Color(0.62f, 0.72f, 0.28f), 20);
         EnsureDefinition(definitions, GameItems.Fertilizer, "Pupuk", new Color(0.45f, 0.62f, 0.25f), 30);
         EnsureDefinition(definitions, GameItems.WateringCan, "Penyiram", new Color(0.30f, 0.55f, 0.85f), 1);
         EnsureDefinition(definitions, GameItems.SunLamp, "Lampu Matahari", new Color(1f, 0.85f, 0.30f), 1);
         EnsureDefinition(definitions, GameItems.PestCorpse, "Mayat Hama", new Color(0.58f, 0.24f, 0.72f), 20);
         EnsureDefinition(definitions, GameItems.Wood, "Kayu", new Color(0.55f, 0.38f, 0.20f), 50);
-        EnsureDefinition(definitions, GameItems.GetahOak, "Getah Oak", new Color(0.78f, 0.55f, 0.16f), 30);
+        EnsureDefinition(definitions, GameItems.GetahPohon, "Getah Pohon", new Color(0.78f, 0.55f, 0.16f), 30);
         EnsureDefinition(definitions, GameItems.GetahPinus, "Getah Pinus", new Color(0.52f, 0.36f, 0.12f), 30);
-        EnsureDefinition(definitions, GameItems.AirBirch, "Air Birch", new Color(0.55f, 0.85f, 0.92f), 30);
-        EnsureDefinition(definitions, GameItems.KelopakSakura, "Kelopak Sakura", new Color(1f, 0.62f, 0.80f), 30);
+        EnsureDefinition(definitions, GameItems.NiraSawit, "Nira Sawit", new Color(0.92f, 0.82f, 0.42f), 30);
 
         inventory.itemDefinitions = definitions.ToArray();
         inventory.startingItems = new StartingItem[]
         {
-            new StartingItem { id = GameItems.SeedOak, amount = 2 },
+            new StartingItem { id = GameItems.SeedPohon, amount = 2 },
             new StartingItem { id = GameItems.SeedPine, amount = 2 },
-            new StartingItem { id = GameItems.SeedBirch, amount = 2 },
-            new StartingItem { id = GameItems.SeedBlossom, amount = 2 },
+            new StartingItem { id = GameItems.SeedSawit, amount = 2 },
             new StartingItem { id = GameItems.WateringCan, amount = 1 },
-            new StartingItem { id = GameItems.SunLamp, amount = 1 },
+            new StartingItem { id = GameItems.SunLamp, amount = 2 },
             new StartingItem { id = GameItems.Fertilizer, amount = 6 }
         };
 
         EditorUtility.SetDirty(inventory);
+    }
+
+    /// <summary>Item dari jenis pohon yang sudah dihapus (Oak/Birch/Sakura lama).</summary>
+    static bool IsObsoleteItem(string id)
+    {
+        switch (id)
+        {
+            case "seed_oak":
+            case "seed_birch":
+            case "seed_blossom":
+            case "getah_oak":
+            case "air_birch":
+            case "kelopak_sakura":
+                return true;
+            default:
+                return false;
+        }
     }
 
     static void EnsureDefinition(List<InventoryItemDefinition> definitions, string id,
@@ -193,47 +214,85 @@ public static class TreeCareSetup
         });
     }
 
+    /// <summary>
+    /// [General] Pohon statis di scene (pohon demo/hama) dibuat ulang memakai model 3D
+    /// dari folder 3dAssets. Pohon tanam (punya TreeGrowth) dibiarkan.
+    /// </summary>
     static void PatchSceneTrees(TreeCatalog catalog)
     {
         if (catalog == null) return;
 
-        TreeDurability[] trees = Object.FindObjectsByType<TreeDurability>(
+        PestDefenseGame game = Object.FindFirstObjectByType<PestDefenseGame>(FindObjectsInactive.Include);
+
+        TreeDurability[] oldTrees = Object.FindObjectsByType<TreeDurability>(
             FindObjectsInactive.Include, FindObjectsSortMode.None);
 
-        for (int i = 0; i < trees.Length; i++)
+        List<TreeDurability> rebuilt = new List<TreeDurability>();
+
+        for (int i = 0; i < oldTrees.Length; i++)
         {
-            TreeDurability tree = trees[i];
-            if (tree == null) continue;
-            if (tree.GetComponent<TreeGrowth>() != null) continue;
+            TreeDurability old = oldTrees[i];
+            if (old == null) continue;
 
-            TreeVariant variant = null;
-
-            if (!string.IsNullOrEmpty(tree.commodityItemId))
-                variant = catalog.GetByCommodity(tree.commodityItemId);
-
-            if (variant == null && !string.IsNullOrEmpty(tree.lootItemId))
-                variant = catalog.Get(tree.lootItemId);
-
-            if (variant == null)
+            // Pohon tanam milik player jangan diutak-atik.
+            if (old.GetComponent<TreeGrowth>() != null)
             {
-                string name = tree.name.ToLowerInvariant();
-                if (name.Contains("oak")) variant = catalog.Get("tree_oak");
-                else if (name.Contains("pine") || name.Contains("pinus")) variant = catalog.Get("tree_pine");
-                else if (name.Contains("birch")) variant = catalog.Get("tree_birch");
-                else if (name.Contains("blossom") || name.Contains("sakura")) variant = catalog.Get("tree_blossom");
+                rebuilt.Add(old);
+                continue;
             }
 
-            if (variant == null) variant = catalog.Get("tree_oak");
+            TreeVariant variant = ResolveVariant(catalog, old);
             if (variant == null) continue;
 
-            // Pohon lama tidak lagi memberi loot saat hancur.
-            tree.lootItemId = "";
-            tree.commodityItemId = variant.commodityItemId;
-            tree.commodityYield = 1;
-            tree.seedItemId = variant.seedItemId;
+            Vector3 position = old.transform.position;
+            float yaw = old.transform.eulerAngles.y;
+            Transform parent = old.transform.parent;
+            string newName = "Tree_" + (rebuilt.Count + 1);
 
-            EditorUtility.SetDirty(tree);
+            Object.DestroyImmediate(old.gameObject);
+
+            TreeDurability fresh = TreeFactory.Create(variant, position, parent, true, 1f, yaw);
+            if (fresh == null) continue;
+
+            fresh.name = newName;
+            rebuilt.Add(fresh);
         }
+
+        if (game != null)
+        {
+            game.trees = rebuilt.ToArray();
+            EditorUtility.SetDirty(game);
+        }
+    }
+
+    /// <summary>Pilih jenis pohon baru untuk pohon lama berdasarkan komoditas / nama.</summary>
+    static TreeVariant ResolveVariant(TreeCatalog catalog, TreeDurability tree)
+    {
+        if (!string.IsNullOrEmpty(tree.commodityItemId))
+        {
+            switch (tree.commodityItemId)
+            {
+                case "getah_pinus":
+                case "getah_pohon":
+                case "nira_sawit":
+                    TreeVariant direct = catalog.GetByCommodity(tree.commodityItemId);
+                    if (direct != null) return direct;
+                    break;
+
+                // Jenis yang dihapus dipetakan ke jenis baru yang paling mirip.
+                case "getah_oak":
+                case "air_birch":
+                    return catalog.Get("tree_pohon");
+                case "kelopak_sakura":
+                    return catalog.Get("tree_sawit");
+            }
+        }
+
+        string name = tree.name.ToLowerInvariant();
+        if (name.Contains("pine") || name.Contains("pinus")) return catalog.Get("tree_pine");
+        if (name.Contains("sawit") || name.Contains("palm")) return catalog.Get("tree_sawit");
+
+        return catalog.Get("tree_pohon");
     }
 
     // ==================================================================
@@ -564,7 +623,8 @@ public static class TreeCareSetup
         stageRect.offsetMax = new Vector2(-90f, -66f);
         stage.color = new Color(0.86f, 0.92f, 1f);
 
-        Text tools = CreateText("Tools", panel, "Pupuk: 0   |   Penyiram: -   |   Lampu: -",
+        Text tools = CreateText("Tools", panel,
+            "Penyiram: ada   |   Pupuk: 0   |   Efek pupuk: +30% cepat, +25% HP",
             20, TextAnchor.MiddleLeft);
         RectTransform toolsRect = tools.rectTransform;
         toolsRect.anchorMin = new Vector2(0f, 1f);
@@ -598,16 +658,13 @@ public static class TreeCareSetup
         rowLayout.childForceExpandWidth = true;
         rowLayout.childForceExpandHeight = true;
 
+        Button waterButton = CreateButton(buttonRow, "WaterButton", "SIRAM",
+            new Color(0.18f, 0.38f, 0.62f, 0.98f), out Text waterLabel);
         Button fertilizerButton = CreateButton(buttonRow, "FertilizerButton", "PUPUK",
             new Color(0.24f, 0.52f, 0.28f, 0.98f), out Text fertilizerLabel);
-        Button waterButton = CreateButton(buttonRow, "WaterButton", "AIR",
-            new Color(0.18f, 0.38f, 0.62f, 0.98f), out Text waterLabel);
-        Button lampButton = CreateButton(buttonRow, "LampButton", "LAMPU",
-            new Color(0.62f, 0.52f, 0.14f, 0.98f), out Text lampLabel);
 
-        fertilizerLabel.fontSize = 26;
         waterLabel.fontSize = 26;
-        lampLabel.fontSize = 26;
+        fertilizerLabel.fontSize = 26;
 
         Text message = CreateText("Message", panel, "", 20, TextAnchor.MiddleCenter);
         RectTransform messageRect = message.rectTransform;
@@ -627,16 +684,15 @@ public static class TreeCareSetup
         care.messageText = message;
         care.fertilizerButton = fertilizerButton;
         care.waterButton = waterButton;
-        care.lampButton = lampButton;
+        care.lampButton = null;
         care.closeButton = closeButton;
         care.blockerButton = blockerButton;
         care.fertilizerLabel = fertilizerLabel;
         care.waterLabel = waterLabel;
-        care.lampLabel = lampLabel;
+        care.lampLabel = null;
 
-        UnityEventTools.AddPersistentListener(fertilizerButton.onClick, care.ApplyFertilizer);
         UnityEventTools.AddPersistentListener(waterButton.onClick, care.ApplyWater);
-        UnityEventTools.AddPersistentListener(lampButton.onClick, care.ApplyLamp);
+        UnityEventTools.AddPersistentListener(fertilizerButton.onClick, care.ApplyFertilizer);
         UnityEventTools.AddPersistentListener(closeButton.onClick, care.Close);
         UnityEventTools.AddPersistentListener(blockerButton.onClick, care.Close);
 
@@ -645,225 +701,95 @@ public static class TreeCareSetup
     }
 
     // ==================================================================
-    // Pos dunia (warung kayu beratap)
+    // Pos dunia (model 3D dari folder 3dAssets)
     // ==================================================================
     static ShopStation BuildShopStation(ShopPanel panel)
     {
-        Warung warung = BuildWarung(ShopStationName, new Vector3(ShopX, 0f, PostZ), "TOKO",
-            new Color(1f, 0.92f, 0.45f), new Color(0.42f, 0.29f, 0.16f),
-            new Color(0.55f, 0.24f, 0.18f), new Color(0.16f, 0.34f, 0.22f));
+        GameObject root = new GameObject(ShopStationName);
+        root.transform.position = new Vector3(ShopX, 0f, PostZ);
 
-        ShopStation station = warung.root.AddComponent<ShopStation>();
+        // Bagian depan model (papan "TOKO KEBUN") diarahkan ke spawn player.
+        GameObject model = ModelLibrary.Spawn(ModelLibrary.ShopModel, root.transform, Vector3.zero, -65f);
+        AddPostCollider(root, model, ModelLibrary.ShopModel, 4.6f, 2.4f);
+
+        ShopStation station = root.AddComponent<ShopStation>();
         station.panel = panel;
         station.stationName = "Toko";
         station.interactRadius = 8f;
 
-        // Barang dagangan di atas meja.
-        Material crateMaterial = EnsureMaterial("ShopCrate", new Color(0.62f, 0.44f, 0.24f));
-        Material sackMaterial = EnsureMaterial("ShopSack", new Color(0.74f, 0.66f, 0.46f));
-
-        GameObject crateA = CreatePrimitive(PrimitiveType.Cube, "CrateA", warung.root.transform,
-            crateMaterial, false);
-        crateA.transform.localPosition = new Vector3(-1.85f, 1.32f, 1.45f);
-        crateA.transform.localScale = new Vector3(0.52f, 0.5f, 0.52f);
-
-        GameObject crateB = CreatePrimitive(PrimitiveType.Cube, "CrateB", warung.root.transform,
-            crateMaterial, false);
-        crateB.transform.localPosition = new Vector3(-1.35f, 1.2f, 1.45f);
-        crateB.transform.localScale = new Vector3(0.4f, 0.3f, 0.4f);
-
-        GameObject sack = CreatePrimitive(PrimitiveType.Cube, "Sack", warung.root.transform,
-            sackMaterial, false);
-        sack.transform.localPosition = new Vector3(1.75f, 1.28f, 1.45f);
-        sack.transform.localScale = new Vector3(0.5f, 0.44f, 0.46f);
-        sack.transform.localRotation = Quaternion.Euler(0f, 18f, 0f);
-
-        // Bibit contoh: tiga pot kecil warna hijau di tengah meja.
-        Material potMaterial = EnsureMaterial("ShopPot", new Color(0.48f, 0.30f, 0.18f));
-        Material leafMaterial = EnsureMaterial("ShopLeaf", new Color(0.34f, 0.70f, 0.30f));
-
-        for (int i = 0; i < 3; i++)
-        {
-            float x = -0.45f + i * 0.45f;
-
-            GameObject pot = CreatePrimitive(PrimitiveType.Cylinder, "Pot_" + i,
-                warung.root.transform, potMaterial, false);
-            pot.transform.localPosition = new Vector3(x, 1.15f, 1.42f);
-            pot.transform.localScale = new Vector3(0.18f, 0.11f, 0.18f);
-
-            GameObject leaf = CreatePrimitive(PrimitiveType.Sphere, "Leaf_" + i,
-                warung.root.transform, leafMaterial, false);
-            leaf.transform.localPosition = new Vector3(x, 1.42f, 1.42f);
-            leaf.transform.localScale = new Vector3(0.26f, 0.26f, 0.26f);
-        }
-
-        // Lampu warung.
-        AddWarmLight(warung.root.transform, new Vector3(0f, 2.25f, 0.6f));
-
-        BoxCollider collider = warung.root.AddComponent<BoxCollider>();
-        collider.center = new Vector3(0f, 1.35f, -0.2f);
-        collider.size = new Vector3(5.6f, 2.7f, 4.2f);
-
+        AddWarmLight(root.transform, new Vector3(0f, 2.4f, 1.6f));
         return station;
     }
 
     static DecomposerStation BuildDecomposerStation(DecomposerPanel panel)
     {
-        Warung warung = BuildWarung(DecomposerStationName, new Vector3(DecomposerX, 0f, PostZ),
-            "DEKOMPOSER", new Color(0.88f, 0.72f, 1f), new Color(0.36f, 0.27f, 0.19f),
-            new Color(0.32f, 0.22f, 0.40f), new Color(0.26f, 0.16f, 0.32f));
+        GameObject root = new GameObject(DecomposerStationName);
+        root.transform.position = new Vector3(DecomposerX, 0f, PostZ);
 
-        DecomposerStation station = warung.root.AddComponent<DecomposerStation>();
+        // Papan "BALAI DEKOMPOSISI HAMA" pada model diarahkan ke spawn player.
+        GameObject model = ModelLibrary.Spawn(ModelLibrary.DecomposerModel, root.transform, Vector3.zero, 65f);
+        AddPostCollider(root, model, ModelLibrary.DecomposerModel, 2.9f, 1.1f);
+
+        DecomposerStation station = root.AddComponent<DecomposerStation>();
         station.panel = panel;
         station.stationName = "Dekomposer Hama";
         station.interactRadius = 8f;
 
-        Material boxMaterial = EnsureMaterial("DecomposerBox", new Color(0.34f, 0.24f, 0.14f));
-        Material crateMaterial = EnsureMaterial("DecompCrate", new Color(0.40f, 0.34f, 0.20f));
+        // Tiga tutup bak kompos. Posisi mengikuti bak pada model (lokal model).
+        Vector3[] binCenters =
+        {
+            new Vector3(-0.52f, 0.78f, -0.42f),
+            new Vector3(0.08f, 0.78f, -0.42f),
+            new Vector3(0.64f, 0.78f, -0.42f)
+        };
+
+        Material lidMaterial = EnsureMaterial("DecomposerBox", new Color(0.34f, 0.24f, 0.14f));
+        Transform lidParent = model != null ? model.transform : root.transform;
 
         List<DecomposerBox> boxes = new List<DecomposerBox>();
 
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < binCenters.Length; i++)
         {
-            GameObject boxObject = CreatePrimitive(PrimitiveType.Cube, "Box_" + (i + 1),
-                warung.root.transform, boxMaterial, true);
-            boxObject.transform.localPosition = new Vector3((i - 1) * 1.3f, 1.52f, 1.45f);
-            boxObject.transform.localScale = new Vector3(0.82f, 0.82f, 0.82f);
+            GameObject lid = CreatePrimitive(PrimitiveType.Cube, "Box_" + (i + 1),
+                lidParent, lidMaterial, true);
+            lid.transform.localPosition = binCenters[i];
+            lid.transform.localScale = new Vector3(0.5f, 0.1f, 0.5f);
 
-            DecomposerBox box = boxObject.AddComponent<DecomposerBox>();
-            box.boxRenderer = boxObject.GetComponent<Renderer>();
+            DecomposerBox box = lid.AddComponent<DecomposerBox>();
+            box.boxRenderer = lid.GetComponent<Renderer>();
             box.pestRequirement = 2;
             box.processDuration = 10f;
             box.maxReadyFertilizer = 2;
-            box.labelHeight = 0.78f;
+            box.labelHeight = 0.72f;
             boxes.Add(box);
         }
 
-        // Peti kompos di belakang meja.
-        GameObject compost = CreatePrimitive(PrimitiveType.Cube, "CompostCrate",
-            warung.root.transform, crateMaterial, false);
-        compost.transform.localPosition = new Vector3(0f, 0.62f, -1.2f);
-        compost.transform.localScale = new Vector3(1.5f, 0.75f, 0.9f);
-
-        GameObject compostLid = CreatePrimitive(PrimitiveType.Cube, "CompostLid",
-            warung.root.transform, boxMaterial, false);
-        compostLid.transform.localPosition = new Vector3(0f, 1.05f, -1.2f);
-        compostLid.transform.localScale = new Vector3(1.62f, 0.12f, 1f);
-
-        AddWarmLight(warung.root.transform, new Vector3(0f, 2.25f, 0.6f));
-
-        BoxCollider collider = warung.root.AddComponent<BoxCollider>();
-        collider.center = new Vector3(0f, 1.35f, -0.2f);
-        collider.size = new Vector3(5.6f, 2.7f, 4.2f);
+        AddWarmLight(root.transform, new Vector3(0f, 1.9f, 0.9f));
 
         station.boxes = boxes.ToArray();
         return station;
     }
 
-    struct Warung
-    {
-        public GameObject root;
-    }
-
     /// <summary>
-    /// Warung kayu sederhana: dek, 4 tiang, atap pelana, meja counter di depan,
-    /// papan nama di atas atap, dan lampu hangat di bawah atap.
-    /// Meja sengaja diletakkan di depan atap supaya tetap terlihat dari kamera isometrik.
+    /// Collider untuk pos. Kalau model ada, collider menempel di model supaya ikut rotasi.
     /// </summary>
-    static Warung BuildWarung(string name, Vector3 position, string signText, Color signTextColor,
-        Color woodColor, Color roofColor, Color signColor)
+    static void AddPostCollider(GameObject root, GameObject model, string modelKey,
+        float fallbackWidth, float fallbackHeight)
     {
-        GameObject root = new GameObject(name);
-        root.transform.position = position;
-
-        Material wood = EnsureMaterial("WarungWood", woodColor);
-        Material woodDark = EnsureMaterial("WarungWoodDark", new Color(0.30f, 0.20f, 0.11f));
-        Material roof = EnsureMaterial("WarungRoof", roofColor);
-        Material sign = EnsureMaterial("WarungSign", signColor);
-        Material trim = EnsureMaterial("WarungTrim", new Color(0.68f, 0.52f, 0.30f));
-
-        // Dek / lantai panggung.
-        GameObject deck = CreatePrimitive(PrimitiveType.Cube, "Deck", root.transform, woodDark, false);
-        deck.transform.localPosition = new Vector3(0f, 0.1f, -0.1f);
-        deck.transform.localScale = new Vector3(5.8f, 0.2f, 4.2f);
-
-        // 4 tiang.
-        float[] postX = { -2.4f, 2.4f };
-        float[] postZ = { -1.75f, 0.25f };
-
-        for (int x = 0; x < postX.Length; x++)
+        if (model != null)
         {
-            for (int z = 0; z < postZ.Length; z++)
-            {
-                GameObject post = CreatePrimitive(PrimitiveType.Cylinder,
-                    "Post_" + x + "_" + z, root.transform, wood, false);
-                post.transform.localPosition = new Vector3(postX[x], 1.5f, postZ[z]);
-                post.transform.localScale = new Vector3(0.1f, 1.4f, 0.1f);
-            }
+            float height = ModelLibrary.GetHeight(modelKey);
+            Vector2 footprint = ModelLibrary.GetFootprint(modelKey);
+
+            BoxCollider modelCollider = model.AddComponent<BoxCollider>();
+            modelCollider.center = new Vector3(0f, height * 0.5f, 0f);
+            modelCollider.size = new Vector3(footprint.x, Mathf.Max(0.5f, height), footprint.y);
+            return;
         }
 
-        // Balok atas.
-        GameObject beamFront = CreatePrimitive(PrimitiveType.Cube, "BeamFront", root.transform,
-            wood, false);
-        beamFront.transform.localPosition = new Vector3(0f, 2.92f, 0.25f);
-        beamFront.transform.localScale = new Vector3(5.1f, 0.14f, 0.14f);
-
-        GameObject beamBack = CreatePrimitive(PrimitiveType.Cube, "BeamBack", root.transform,
-            wood, false);
-        beamBack.transform.localPosition = new Vector3(0f, 2.92f, -1.75f);
-        beamBack.transform.localScale = new Vector3(5.1f, 0.14f, 0.14f);
-
-        // Atap pelana (dua bidang miring).
-        GameObject roofFront = CreatePrimitive(PrimitiveType.Cube, "RoofFront", root.transform,
-            roof, false);
-        roofFront.transform.localPosition = new Vector3(0f, 2.68f, 0.28f);
-        roofFront.transform.localScale = new Vector3(6.3f, 0.16f, 2.35f);
-        roofFront.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
-
-        GameObject roofBack = CreatePrimitive(PrimitiveType.Cube, "RoofBack", root.transform,
-            roof, false);
-        roofBack.transform.localPosition = new Vector3(0f, 2.68f, -1.78f);
-        roofBack.transform.localScale = new Vector3(6.3f, 0.16f, 2.35f);
-        roofBack.transform.localRotation = Quaternion.Euler(-20f, 0f, 0f);
-
-        GameObject ridge = CreatePrimitive(PrimitiveType.Cube, "Ridge", root.transform,
-            trim, false);
-        ridge.transform.localPosition = new Vector3(0f, 3.08f, -0.75f);
-        ridge.transform.localScale = new Vector3(6.4f, 0.16f, 0.22f);
-
-        // Meja counter di depan atap.
-        GameObject counterTop = CreatePrimitive(PrimitiveType.Cube, "CounterTop", root.transform,
-            trim, false);
-        counterTop.transform.localPosition = new Vector3(0f, 1.02f, 1.45f);
-        counterTop.transform.localScale = new Vector3(4.9f, 0.16f, 1.0f);
-
-        GameObject counterBody = CreatePrimitive(PrimitiveType.Cube, "CounterBody", root.transform,
-            wood, false);
-        counterBody.transform.localPosition = new Vector3(0f, 0.56f, 1.88f);
-        counterBody.transform.localScale = new Vector3(4.9f, 0.92f, 0.14f);
-
-        // Papan nama di atas atap.
-        GameObject signBoard = CreatePrimitive(PrimitiveType.Cube, "SignBoard", root.transform,
-            sign, false);
-        signBoard.transform.localPosition = new Vector3(0f, 3.62f, -0.75f);
-        signBoard.transform.localScale = new Vector3(3.6f, 0.74f, 0.16f);
-
-        GameObject signLegL = CreatePrimitive(PrimitiveType.Cube, "SignLegL", root.transform,
-            wood, false);
-        signLegL.transform.localPosition = new Vector3(-1.2f, 3.22f, -0.75f);
-        signLegL.transform.localScale = new Vector3(0.1f, 0.5f, 0.1f);
-
-        GameObject signLegR = CreatePrimitive(PrimitiveType.Cube, "SignLegR", root.transform,
-            wood, false);
-        signLegR.transform.localPosition = new Vector3(1.2f, 3.22f, -0.75f);
-        signLegR.transform.localScale = new Vector3(0.1f, 0.5f, 0.1f);
-
-        CreateBillboardText("SignText", root.transform, signText,
-            new Vector3(0f, 3.62f, -0.6f), 0.11f, signTextColor, 72);
-
-        Warung warung;
-        warung.root = root;
-        return warung;
+        BoxCollider collider = root.AddComponent<BoxCollider>();
+        collider.center = new Vector3(0f, fallbackHeight * 0.5f, 0f);
+        collider.size = new Vector3(fallbackWidth, fallbackHeight, fallbackWidth);
     }
 
     static void AddWarmLight(Transform parent, Vector3 localPosition)

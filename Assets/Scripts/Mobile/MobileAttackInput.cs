@@ -42,19 +42,72 @@ public class MobileAttackInput : MonoBehaviour
     [Tooltip("Dipanggil setiap kali tombol attack ditekan (setelah lolos cooldown).")]
     public UnityEvent onAttack;
 
+    [Tooltip("Aktifkan tembakan terus-menerus saat tombol ATK ditahan (semprotan).")]
+    public bool holdToFire = true;
+
+    [Header("Magasin / Reload")]
+    [Tooltip("Jumlah tembakan sebelum harus reload.")]
+    public int magazineSize = 12;
+
+    [Tooltip("Lama reload dalam detik.")]
+    public float reloadDuration = 1.5f;
+
+    public int AmmoRemaining { get; private set; }
+    public bool IsReloading { get; private set; }
+    public float ReloadProgress => IsReloading
+        ? Mathf.Clamp01(reloadTimer / Mathf.Max(0.01f, reloadDuration))
+        : 0f;
+
     float nextAttackTime;
+    float reloadTimer;
     bool? buttonVisible;
+    bool firing;
 
     void Awake()
     {
+        AmmoRemaining = Mathf.Max(1, magazineSize);
+        IsReloading = false;
+        reloadTimer = 0f;
+
         if (animator == null) animator = GetComponentInChildren<Animator>(true);
         if (switcher == null) switcher = FindFirstObjectByType<CameraSwitcher>();
         RefreshButton();
     }
 
+    void Update()
+    {
+        if (IsReloading)
+        {
+            reloadTimer += Time.deltaTime;
+            if (reloadTimer >= Mathf.Max(0.01f, reloadDuration))
+            {
+                IsReloading = false;
+                reloadTimer = 0f;
+                AmmoRemaining = Mathf.Max(1, magazineSize);
+            }
+        }
+
+        if (firing && holdToFire && switcher != null &&
+            switcher.CurrentMode == CameraSwitcher.Mode.FirstPerson)
+            Attack();
+    }
+
     void LateUpdate()
     {
         RefreshButton();
+    }
+
+    /// <summary>Dipanggil HoldAttackButton saat tombol ATK ditekan.</summary>
+    public void StartFire()
+    {
+        firing = true;
+        Attack();
+    }
+
+    /// <summary>Dipanggil HoldAttackButton saat tombol ATK dilepas.</summary>
+    public void StopFire()
+    {
+        firing = false;
     }
 
     void RefreshButton()
@@ -71,8 +124,17 @@ public class MobileAttackInput : MonoBehaviour
     /// <summary>Dipanggil oleh Button.onClick.</summary>
     public void Attack()
     {
+        if (IsReloading) return;
         if (Time.time < nextAttackTime) return;
+
+        if (AmmoRemaining <= 0)
+        {
+            StartReload();
+            return;
+        }
+
         nextAttackTime = Time.time + Mathf.Max(0f, cooldown);
+        AmmoRemaining--;
 
         if (animator != null && !string.IsNullOrEmpty(animatorTrigger))
             animator.SetTrigger(animatorTrigger);
@@ -80,12 +142,22 @@ public class MobileAttackInput : MonoBehaviour
         if (suppressBullets)
         {
             onAttack?.Invoke();
+            if (AmmoRemaining <= 0) StartReload();
             return;
         }
 
         Fire();
 
         onAttack?.Invoke();
+        if (AmmoRemaining <= 0) StartReload();
+    }
+
+    /// <summary>Mulai jeda isi ulang. Dipanggil otomatis saat magasin habis.</summary>
+    public void StartReload()
+    {
+        if (IsReloading) return;
+        IsReloading = true;
+        reloadTimer = 0f;
     }
 
     void Fire()

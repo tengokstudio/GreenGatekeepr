@@ -3,7 +3,8 @@ using UnityEngine.EventSystems;
 
 /// <summary>
 /// Menerjemahkan tap singkat di area swipe menjadi aksi dunia.
-/// Prioritas: toko -> dekomposer -> rawat pohon -> edit mode / ambil mayat hama.
+/// Prioritas: toko -> dekomposer -> kolam (isi ulang penyiram) -> rawat pohon
+/// -> edit mode / ambil mayat hama.
 /// Saat edit mode aktif, panel rawat pohon dilewati: tap hanya untuk menanam
 /// dan menghapus pohon.
 /// Tap dibedakan dari swipe lewat jarak &amp; durasi, jadi menggeser kamera tidak
@@ -66,6 +67,9 @@ public class WorldTapRouter : MonoBehaviour, IPointerDownHandler, IPointerUpHand
 
         if (ShopStation.TryHandleTapFromScreen(position, camera, player)) return;
         if (DecomposerStation.TryHandleTapFromScreen(position, camera, player)) return;
+
+        // Kolam: tap untuk mengisi ulang air Penyiram.
+        if (PondRefillStation.TryHandleTapFromScreen(position, camera, player)) return;
 
         // [Isometric] Edit mode: rawat pohon dimatikan, tap langsung ke tanam/hapus.
         bool editing = TreeEditController.Instance != null && TreeEditController.Instance.IsEditing;

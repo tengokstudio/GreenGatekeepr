@@ -21,7 +21,7 @@ public class ForestGenerator : MonoBehaviour
 
     [Header("Placement")]
     public int treeCount = 40;
-    public float areaSize = 100f;
+    public float areaSize = 60f;
     public float minSpacing = 4f;
     public float minDistanceFromPlayer = 8f;
     public float minDistanceFromNest = 6f;
@@ -41,6 +41,8 @@ public class ForestGenerator : MonoBehaviour
     bool generated;
 
     const string KeyPrefix = "GG.Forest.";
+    // Naikkan kalau daftar jenis pohon berubah supaya layout lama tidak dipakai lagi.
+    const string LayoutVersion = "v2";
 
     void Start()
     {
@@ -207,7 +209,7 @@ public class ForestGenerator : MonoBehaviour
 
     static string SaveKey(string suffix)
     {
-        return KeyPrefix + SceneManager.GetActiveScene().name + "." + suffix;
+        return KeyPrefix + SceneManager.GetActiveScene().name + "." + LayoutVersion + "." + suffix;
     }
 
     // ------------------------------------------------------------------

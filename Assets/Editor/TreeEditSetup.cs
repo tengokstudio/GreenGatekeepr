@@ -85,7 +85,7 @@ public static class TreeEditSetup
         forest.player = player;
         forest.treesParent = treesParent;
         forest.treeCount = 40;
-        forest.areaSize = 100f;
+        forest.areaSize = 56f;
         forest.minSpacing = 4f;
         forest.minDistanceFromPlayer = 8f;
         forest.minDistanceFromNest = 6f;
@@ -98,7 +98,7 @@ public static class TreeEditSetup
         GameObject gridObject = new GameObject("GridOverlay");
         gridObject.transform.SetParent(editRoot.transform, false);
         GridOverlay grid = gridObject.AddComponent<GridOverlay>();
-        grid.areaSize = 100f;
+        grid.areaSize = 56f;
         grid.cellSize = 2f;
 
         // ---------------- UI ----------------
@@ -184,7 +184,7 @@ public static class TreeEditSetup
         controller.buttonLabel = buttonLabel;
         controller.hintRoot = hintRect.gameObject;
         controller.hintText = hintText;
-        controller.areaSize = 100f;
+        controller.areaSize = 56f;
         controller.cellSize = 2f;
 
         UnityEventTools.AddPersistentListener(editButton.onClick, controller.ToggleEditMode);
@@ -196,7 +196,7 @@ public static class TreeEditSetup
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
 
-        Debug.Log("[TreeEditSetup] Selesai: TreeCatalog (4 variasi), ForestGenerator (40 pohon), " +
+        Debug.Log("[TreeEditSetup] Selesai: TreeCatalog (3 variasi), ForestGenerator (40 pohon), " +
                   "edit mode + grid + tombol EDIT + tap router. Scene disimpan.");
     }
 

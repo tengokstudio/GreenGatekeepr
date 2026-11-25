@@ -3,7 +3,9 @@ using UnityEngine.UI;
 
 /// <summary>
 /// [General] Panel perawatan pohon. Terbuka saat bibit/tunas di-tap.
-/// Tiga tombol: Pupuk (consumable), Air (butuh penyiram), Lampu (butuh sun lamp).
+/// Dua tombol: Siram (wajib, memakai Penyiram permanen) dan Pupuk (opsional,
+/// mempercepat tumbuh + menambah HP, hanya saat belum dewasa).
+/// Lampu Matahari tidak dipakai di sini — ia dipasang di grid saat edit mode.
 /// Panel tidak memakai layar dim; ada blocker transparan full screen supaya tap
 /// di luar panel menutup panel dan tidak tembus ke dunia.
 /// </summary>
@@ -75,7 +77,7 @@ public class TreeCarePanel : MonoBehaviour
 
         CurrentTree = growth;
         SetVisible(true);
-        ShowMessage("Beri pupuk + air + lampu untuk menaikkan tahap.", new Color(0.82f, 0.9f, 1f));
+        ShowMessage("Siram untuk mulai tumbuh. Pupuk opsional (+30% cepat, +25% HP).", new Color(0.82f, 0.9f, 1f));
         Refresh();
     }
 
@@ -121,7 +123,12 @@ public class TreeCarePanel : MonoBehaviour
     // ------------------------------------------------------------------
     public void ApplyFertilizer() => Apply(TreeCareType.Fertilizer);
     public void ApplyWater() => Apply(TreeCareType.Water);
-    public void ApplyLamp() => Apply(TreeCareType.Lamp);
+
+    [System.Obsolete("Lampu dipasang di grid, bukan dipakai di panel perawatan.")]
+    public void ApplyLamp()
+    {
+        ShowMessage("Lampu Matahari dipasang di grid saat edit mode.", new Color(1f, 0.8f, 0.5f));
+    }
 
     void Apply(TreeCareType type)
     {
@@ -158,7 +165,7 @@ public class TreeCarePanel : MonoBehaviour
             else
             {
                 stageText.text = growth.StageName + "  (tahap " +
-                                 (growth.stageIndex + 1) + "/3)  -  butuh pupuk + air + lampu";
+                                 (growth.stageIndex + 1) + "/3)  -  wajib disiram, pupuk opsional";
             }
         }
 
@@ -168,18 +175,25 @@ public class TreeCarePanel : MonoBehaviour
         {
             int fertilizer = inventory != null ? inventory.CountItem(GameItems.Fertilizer) : 0;
             bool can = inventory != null && inventory.CountItem(GameItems.WateringCan) > 0;
-            bool lamp = inventory != null && inventory.CountItem(GameItems.SunLamp) > 0;
 
-            toolsText.text = "Pupuk: " + fertilizer +
-                             "   |   Penyiram: " + (can ? "ada" : "tidak ada") +
-                             "   |   Lampu: " + (lamp ? "ada" : "tidak ada");
+            WateringCanSupply supply = WateringCanSupply.Ensure();
+            string water = supply != null ? supply.Label + " air" : "tidak diketahui";
+
+            toolsText.text = "Penyiram: " + (can ? water : "TIDAK ADA") +
+                             "   |   Pupuk: " + fertilizer +
+                             "   |   Isi air: tap kolam";
         }
 
-        bool locked = growth.IsGrowing || growth.IsMature;
+        WateringCanSupply waterSupply = WateringCanSupply.Ensure();
+        bool hasWater = waterSupply != null && waterSupply.HasWater;
 
-        SetButton(fertilizerButton, fertilizerLabel, "PUPUK", growth.fertilizerApplied, locked);
-        SetButton(waterButton, waterLabel, "AIR", growth.waterApplied, locked);
-        SetButton(lampButton, lampLabel, "LAMPU", growth.lampApplied, locked);
+        // Siram hanya bisa sebelum timer berjalan. Pupuk boleh dipakai kapan saja
+        // selama pohon belum dewasa (termasuk saat sedang tumbuh).
+        SetButton(waterButton, waterLabel, hasWater ? "SIRAM" : "ISI AIR",
+            growth.waterApplied, growth.IsGrowing || growth.IsMature || !hasWater);
+        SetButton(fertilizerButton, fertilizerLabel, "PUPUK", growth.fertilizerApplied,
+            growth.IsMature);
+        SetButton(lampButton, lampLabel, "LAMPU", true, true);
     }
 
     static void SetButton(Button button, Text label, string baseLabel, bool applied, bool locked)
