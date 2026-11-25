@@ -8,6 +8,7 @@ using UnityEngine.Rendering;
 /// </summary>
 public static class TreeFactory
 {
+    static readonly Dictionary<Color, Material> barMaterialCache = new Dictionary<Color, Material>();
     static readonly Dictionary<Color, Material> materialCache = new Dictionary<Color, Material>();
     static readonly Dictionary<string, Mesh> coneCache = new Dictionary<string, Mesh>();
 
@@ -22,22 +23,73 @@ public static class TreeFactory
         root.transform.SetParent(parent, false);
         root.transform.position = position;
         root.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
-        root.transform.localScale = Vector3.one * Mathf.Max(0.1f, scale);
 
-        Material trunkMaterial = GetMaterial(variant.trunkColor);
-        Material foliageMaterial = GetMaterial(variant.foliageColor);
+        string family = variant.ResolveModelFamily();
+        GameObject[] stagePrefabs = ModelLibrary.GetTreeStages(family);
 
-        BuildTrunk(root.transform, variant, trunkMaterial);
-        List<Renderer> foliage = BuildFoliage(root.transform, variant, foliageMaterial);
+        List<Renderer> foliage = new List<Renderer>();
+        TreeModelStages stages = null;
+        Renderer[] foliageRenderers = null;
+        float barHeight = variant.barHeight;
+        Color healthyColor = variant.foliageColor;
 
-        GameObject barRoot = BuildHealthBar(root.transform, variant.barHeight, out Transform fill);
+        if (stagePrefabs != null)
+        {
+            // Model 3D low-poly: 3 ukuran untuk tahap tumbuh.
+            stages = TreeModelStages.Build(root.transform, stagePrefabs, scale);
+            root.transform.localScale = Vector3.one * Mathf.Max(0.1f, scale);
+
+            float modelHeight = ModelLibrary.GetHeight(ModelLibrary.TreeKey(family, 3));
+            barHeight = modelHeight + 0.9f;
+
+            // Simpan renderer daun SEKARANG, sebelum health bar dibuat.
+            // AllRenderers() membaca semua renderer di root, jadi kalau dipanggil
+            // setelah bar dibuat, BG & Fill ikut terwarnai putih/daun.
+            foliageRenderers = stages.AllRenderers();
+            if (foliageRenderers.Length > 0 && foliageRenderers[0].sharedMaterial != null &&
+                foliageRenderers[0].sharedMaterial.HasProperty(BaseColorId))
+            {
+                healthyColor = foliageRenderers[0].sharedMaterial.GetColor(BaseColorId);
+            }
+
+            AddTreeCollider(root, modelHeight, Mathf.Max(0.35f, modelHeight * 0.18f));
+        }
+        else
+        {
+            // Fallback prosedural kalau prefab model belum dibuat.
+            root.transform.localScale = Vector3.one * Mathf.Max(0.1f, scale);
+
+            Material trunkMaterial = GetMaterial(variant.trunkColor);
+            Material foliageMaterial = GetMaterial(variant.foliageColor);
+
+            BuildTrunk(root.transform, variant, trunkMaterial);
+            foliage = BuildFoliage(root.transform, variant, foliageMaterial);
+
+            AddTreeCollider(root, variant.trunkHeight + 1.2f, Mathf.Max(0.4f, variant.trunkRadius));
+        }
+
+        GameObject barRoot = BuildHealthBar(root.transform, barHeight, out Transform fill);
+
+        // Jaga-jaga: buang renderer health bar dari daftar daun.
+        if (foliageRenderers != null && barRoot != null)
+        {
+            List<Renderer> filtered = new List<Renderer>(foliageRenderers.Length);
+            for (int i = 0; i < foliageRenderers.Length; i++)
+            {
+                Renderer renderer = foliageRenderers[i];
+                if (renderer == null) continue;
+                if (renderer.transform.IsChildOf(barRoot.transform)) continue;
+                filtered.Add(renderer);
+            }
+            foliageRenderers = filtered.ToArray();
+        }
 
         TreeDurability durability = root.AddComponent<TreeDurability>();
         durability.maxHealth = variant.maxHealth;
         durability.healthBarRoot = barRoot;
         durability.healthBarFill = fill;
-        durability.foliageRenderers = foliage.ToArray();
-        durability.healthyColor = variant.foliageColor;
+        durability.foliageRenderers = stages != null ? foliageRenderers : foliage.ToArray();
+        durability.healthyColor = healthyColor;
         durability.damagedColor = new Color(0.55f, 0.42f, 0.12f);
         durability.lootItemId = "";
         durability.commodityItemId = variant.commodityItemId;
@@ -48,6 +100,18 @@ public static class TreeFactory
 
         root.SetActive(true);
         return durability;
+    }
+
+    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
+    /// <summary>Collider tab/klik &amp; damage. Ditambahkan di root supaya mudah dimatikan saat pohon tumbang.</summary>
+    static void AddTreeCollider(GameObject root, float height, float radius)
+    {
+        CapsuleCollider collider = root.AddComponent<CapsuleCollider>();
+        collider.center = new Vector3(0f, height * 0.5f, 0f);
+        collider.height = Mathf.Max(1f, height);
+        collider.radius = Mathf.Max(0.25f, radius);
+        collider.direction = 1;
     }
 
     static void BuildTrunk(Transform parent, TreeVariant variant, Material material)
@@ -75,16 +139,14 @@ public static class TreeFactory
                 foliage.Add(AddCone(parent, "Foliage_Top", new Vector3(0f, h * 0.45f + 2.70f, 0f), 0.85f, 1.80f, material));
                 break;
 
-            case TreeFoliageStyle.Birch:
-                foliage.Add(AddSphere(parent, "Foliage_Low", new Vector3(0f, h + 0.20f, 0f), 1.80f, material));
-                foliage.Add(AddSphere(parent, "Foliage_Mid", new Vector3(0.40f, h + 0.85f, 0.10f), 1.40f, material));
-                foliage.Add(AddSphere(parent, "Foliage_Top", new Vector3(-0.30f, h + 0.90f, -0.20f), 1.20f, material));
-                break;
-
-            case TreeFoliageStyle.Blossom:
-                foliage.Add(AddSphere(parent, "Foliage_Low", new Vector3(0f, h + 0.30f, 0f), 2.30f, material));
-                foliage.Add(AddSphere(parent, "Foliage_Mid", new Vector3(0.50f, h + 1.00f, 0.20f), 1.70f, material));
-                foliage.Add(AddSphere(parent, "Foliage_Top", new Vector3(-0.40f, h + 0.90f, -0.20f), 1.40f, material));
+            case TreeFoliageStyle.Palm:
+                // Cadangan prosedural: tajuk palem dari beberapa daun pipih.
+                for (int i = 0; i < 6; i++)
+                {
+                    float angle = i * Mathf.PI * 2f / 6f;
+                    Vector3 offset = new Vector3(Mathf.Cos(angle) * 0.85f, h + 0.15f, Mathf.Sin(angle) * 0.85f);
+                    foliage.Add(AddSphere(parent, "Frond_" + i, offset, 1.10f, material));
+                }
                 break;
 
             default:
@@ -104,21 +166,25 @@ public static class TreeFactory
         barRoot.transform.localPosition = new Vector3(0f, height, 0f);
         barRoot.AddComponent<HealthBarBillboard>();
 
-        Material bgMaterial = GetMaterial(new Color(0.07f, 0.07f, 0.08f));
-        Material fillMaterial = GetMaterial(new Color(0.30f, 0.90f, 0.32f));
+        // Health bar memakai shader unlit TANPA fog supaya tetap vibrant dan
+        // terbaca lewat kabut polusi. Warna HDR (>1) membuatnya lebih menonjol.
+        Material borderMaterial = GetBarMaterial(new Color(0.62f, 0.88f, 1f, 1f));
+        Material bgMaterial = GetBarMaterial(new Color(0.015f, 0.02f, 0.025f, 1f));
+        Material fillMaterial = GetBarMaterial(new Color(0.20f, 1.85f, 0.28f, 1f));
 
-        GameObject bg = CreateCube("BG", barRoot.transform, bgMaterial,
-            new Vector3(1.80f, 0.26f, 0.02f), Vector3.zero);
+        CreateCube("Border", barRoot.transform, borderMaterial,
+            new Vector3(2.30f, 0.36f, 0.01f), new Vector3(0f, 0f, 0.01f));
+        CreateCube("BG", barRoot.transform, bgMaterial,
+            new Vector3(2.18f, 0.28f, 0.02f), Vector3.zero);
         GameObject fillObject = CreateCube("Fill", barRoot.transform, fillMaterial,
-            new Vector3(1.70f, 0.18f, 0.03f), new Vector3(0f, 0f, -0.02f));
+            new Vector3(2.06f, 0.20f, 0.03f), new Vector3(0f, 0f, -0.02f));
 
         fill = fillObject.transform;
         barRoot.SetActive(false);
         return barRoot;
     }
 
-    static GameObject CreateCube(string name, Transform parent, Material material, Vector3 scale, Vector3 position)
-    {
+    static GameObject CreateCube(string name, Transform parent, Material material, Vector3 scale, Vector3 position)    {
         GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
         cube.name = name;
         cube.transform.SetParent(parent, false);
@@ -126,7 +192,7 @@ public static class TreeFactory
         cube.transform.localScale = scale;
 
         Collider collider = cube.GetComponent<Collider>();
-        if (collider != null) Object.Destroy(collider);
+        if (collider != null) DestroyNow(collider);
 
         SetMaterial(cube, material);
 
@@ -149,7 +215,7 @@ public static class TreeFactory
         sphere.transform.localScale = Vector3.one * diameter;
 
         Collider collider = sphere.GetComponent<Collider>();
-        if (collider != null) Object.Destroy(collider);
+        if (collider != null) DestroyNow(collider);
 
         SetMaterial(sphere, material);
         return sphere.GetComponent<Renderer>();
@@ -216,6 +282,38 @@ public static class TreeFactory
     {
         Renderer renderer = target.GetComponent<Renderer>();
         if (renderer != null) renderer.sharedMaterial = material;
+    }
+
+    /// <summary>Destroy yang aman dipakai saat edit mode (dipanggil tool editor).</summary>
+    static void DestroyNow(Object target)
+    {
+        if (target == null) return;
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            Object.DestroyImmediate(target);
+            return;
+        }
+#endif
+        Object.Destroy(target);
+    }
+
+    /// <summary>Health bar: unlit, tanpa kabut, warna bisa HDR.</summary>
+    static Material GetBarMaterial(Color color)
+    {
+        if (barMaterialCache.TryGetValue(color, out Material cached)) return cached;
+
+        Shader shader = Shader.Find("GreenGatekeeper/UnlitNoFog");
+        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+
+        Material material = new Material(shader);
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        material.color = color;
+
+        barMaterialCache[color] = material;
+        return material;
     }
 
     static Material GetMaterial(Color color)

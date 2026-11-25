@@ -5,11 +5,10 @@
 /// </summary>
 public static class GameItems
 {
-    // Bibit pohon (menggantikan item pohon lama).
-    public const string SeedOak = "seed_oak";
+    // Bibit pohon. Satu id per famili model 3D di Assets/3dAssets/pohon.
+    public const string SeedPohon = "seed_pohon";
     public const string SeedPine = "seed_pine";
-    public const string SeedBirch = "seed_birch";
-    public const string SeedBlossom = "seed_blossom";
+    public const string SeedSawit = "seed_sawit";
 
     // Perawatan pohon.
     public const string Fertilizer = "fertilizer";
@@ -19,14 +18,13 @@ public static class GameItems
     // Hasil panen / loot.
     public const string Wood = "wood";
     public const string PestCorpse = "pest_corpse";
-    public const string GetahOak = "getah_oak";
+    public const string GetahPohon = "getah_pohon";
     public const string GetahPinus = "getah_pinus";
-    public const string AirBirch = "air_birch";
-    public const string KelopakSakura = "kelopak_sakura";
+    public const string NiraSawit = "nira_sawit";
 
     public static readonly string[] AllSeeds =
     {
-        SeedOak, SeedPine, SeedBirch, SeedBlossom
+        SeedPohon, SeedPine, SeedSawit
     };
 
     public static bool IsSeed(string id)

@@ -22,8 +22,11 @@ public struct TreeCareResult
 
 /// <summary>
 /// [General] Pertumbuhan pohon tanam: Bibit -> Tunas -> Pohon Muda -> Pohon Dewasa.
-/// Tiap tahap butuh 1 pupuk + air + lampu, lalu tumbuh selama <see cref="stageDuration"/> detik.
-/// Air &amp; lampu memakai alat permanen (tidak habis); pupuk consumable.
+/// Satu-satunya syarat tumbuh adalah disiram memakai Penyiram (alat permanen).
+/// Setelah disiram, tahap berjalan <see cref="stageDuration"/> detik.
+/// Pupuk opsional: mempercepat 30% dan menambah HP maksimum 25%, hanya untuk
+/// pohon yang belum dewasa. Lampu matahari bukan lagi perawatan — ia dipasang
+/// di grid saat edit mode dan menentukan sel mana yang boleh ditanami.
 /// Setelah dewasa, pohon otomatis menghasilkan komoditas tiap <see cref="commodityInterval"/> detik.
 /// Komponen ini HANYA ada di pohon yang ditanam player. Pohon hutan / defense
 /// tidak punya komponen ini dan dianggap sudah dewasa.
@@ -32,6 +35,10 @@ public struct TreeCareResult
 public class TreeGrowth : MonoBehaviour
 {
     public const int MatureStage = 3;
+
+    // Pupuk: 10 detik -> 7 detik, HP maks 200 -> 250.
+    public const float FertilizerSpeedFactor = 0.70f;
+    public const float FertilizerHealthFactor = 1.25f;
 
     [Header("Data")]
     public TreeDurability tree;
@@ -45,6 +52,8 @@ public class TreeGrowth : MonoBehaviour
     [Header("Perawatan tahap ini")]
     public bool fertilizerApplied;
     public bool waterApplied;
+
+    [System.Obsolete("Lampu sekarang dipasang di grid, bukan dipakai saat rawat.")]
     public bool lampApplied;
 
     [Header("Hasil pohon dewasa")]
@@ -68,10 +77,15 @@ public class TreeGrowth : MonoBehaviour
     GameObject labelObject;
     float nextLabelRefresh;
     float matureAt = -1f;
+    float baseMaxHealth;
 
     public bool IsMature => stageIndex >= MatureStage;
-    public bool IsGrowing => CareComplete && !IsMature;
-    public bool CareComplete => fertilizerApplied && waterApplied && lampApplied;
+    public bool IsGrowing => waterApplied && !IsMature;
+    public bool CareComplete => waterApplied;
+
+    /// <summary>Durasi tahap setelah memperhitungkan pupuk.</summary>
+    public float EffectiveStageDuration => stageDuration *
+        (fertilizerApplied ? FertilizerSpeedFactor : 1f);
 
     public string StageName
     {
@@ -82,7 +96,9 @@ public class TreeGrowth : MonoBehaviour
         }
     }
 
-    public float RemainingTime => IsGrowing ? Mathf.Max(0f, stageDuration - stageTimer) : stageDuration;
+    public float RemainingTime => IsGrowing
+        ? Mathf.Max(0f, EffectiveStageDuration - stageTimer)
+        : EffectiveStageDuration;
 
     void Update()
     {
@@ -106,7 +122,7 @@ public class TreeGrowth : MonoBehaviour
         if (IsGrowing)
         {
             stageTimer += Time.deltaTime;
-            if (stageTimer >= stageDuration)
+            if (stageTimer >= EffectiveStageDuration)
                 AdvanceStage();
         }
 
@@ -133,8 +149,10 @@ public class TreeGrowth : MonoBehaviour
         stageTimer = 0f;
         fertilizerApplied = false;
         waterApplied = false;
-        lampApplied = false;
         matureAt = -1f;
+        baseMaxHealth = variant != null && variant.maxHealth > 0f
+            ? variant.maxHealth
+            : (tree != null ? tree.maxHealth : 150f);
 
         ApplyStageVisuals();
         CreateLabel();
@@ -150,11 +168,7 @@ public class TreeGrowth : MonoBehaviour
             return new TreeCareResult(false, "Pohon sudah tidak ada.");
 
         if (IsMature)
-            return new TreeCareResult(false, "Pohon sudah dewasa dan otomatis menghasilkan komoditas.");
-
-        if (IsGrowing)
-            return new TreeCareResult(false, "Pohon sedang tumbuh. Tunggu " +
-                Mathf.CeilToInt(RemainingTime) + " detik lagi.");
+            return new TreeCareResult(false, "Pohon sudah dewasa. Pupuk tidak bisa dipakai lagi.");
 
         InventorySystem inventory = InventorySystem.Instance;
 
@@ -162,37 +176,46 @@ public class TreeGrowth : MonoBehaviour
         {
             case TreeCareType.Fertilizer:
                 if (fertilizerApplied)
-                    return new TreeCareResult(false, "Pupuk untuk tahap ini sudah diberikan.");
+                    return new TreeCareResult(false, "Pupuk untuk tahap ini sudah dipakai.");
                 if (inventory == null || inventory.CountItem(GameItems.Fertilizer) <= 0)
                     return new TreeCareResult(false, "Pupuk habis. Buat pupuk di dekomposer.");
                 if (!inventory.RemoveItem(GameItems.Fertilizer, 1))
                     return new TreeCareResult(false, "Pupuk gagal dipakai.");
+
                 fertilizerApplied = true;
-                break;
+                tree.SetMaxHealth(baseMaxHealth * FertilizerHealthFactor, true);
+                RefreshLabel();
+                return new TreeCareResult(true, "Pupuk dipakai: tumbuh 30% lebih cepat, " +
+                    "HP maks +25%." + (waterApplied
+                        ? " Sisa " + Mathf.CeilToInt(RemainingTime) + " detik."
+                        : " Siram dengan Penyiram untuk mulai tumbuh."));
 
             case TreeCareType.Water:
                 if (waterApplied)
-                    return new TreeCareResult(false, "Air untuk tahap ini sudah diberikan.");
+                    return new TreeCareResult(false, "Pohon sudah disiram dan sedang tumbuh.");
                 if (inventory == null || inventory.CountItem(GameItems.WateringCan) <= 0)
                     return new TreeCareResult(false, "Butuh Penyiram (watering can) di inventory.");
+
+                WateringCanSupply supply = WateringCanSupply.Ensure();
+                if (supply == null)
+                    return new TreeCareResult(false, "Persediaan air Penyiram tidak ditemukan.");
+                if (!supply.HasWater)
+                    return new TreeCareResult(false,
+                        "Air Penyiram habis. Isi ulang dengan men-tap kolam.");
+                if (!supply.Consume(1))
+                    return new TreeCareResult(false,
+                        "Air Penyiram habis. Isi ulang dengan men-tap kolam.");
+
+                if (!waterApplied) stageTimer = 0f;
                 waterApplied = true;
-                break;
+                RefreshLabel();
+                return new TreeCareResult(true, StageName + " disiram! Tumbuh dalam " +
+                    Mathf.RoundToInt(EffectiveStageDuration) + " detik. Air tersisa " +
+                    supply.Label + ".");
 
             case TreeCareType.Lamp:
-                if (lampApplied)
-                    return new TreeCareResult(false, "Lampu untuk tahap ini sudah diberikan.");
-                if (inventory == null || inventory.CountItem(GameItems.SunLamp) <= 0)
-                    return new TreeCareResult(false, "Butuh Lampu Matahari (sun lamp) di inventory.");
-                lampApplied = true;
-                break;
-        }
-
-        if (CareComplete)
-        {
-            stageTimer = 0f;
-            RefreshLabel();
-            return new TreeCareResult(true, "Perawatan lengkap! " + StageName +
-                " akan tumbuh dalam " + Mathf.RoundToInt(stageDuration) + " detik.");
+                return new TreeCareResult(false,
+                    "Lampu Matahari dipasang di grid saat edit mode, bukan dipakai di sini.");
         }
 
         RefreshLabel();
@@ -201,10 +224,9 @@ public class TreeGrowth : MonoBehaviour
 
     string CareSummary()
     {
-        string fertilizer = fertilizerApplied ? "Pupuk:OK" : "Pupuk:-";
-        string water = waterApplied ? "Air:OK" : "Air:-";
-        string lamp = lampApplied ? "Lampu:OK" : "Lampu:-";
-        return StageName + "  " + fertilizer + "  " + water + "  " + lamp;
+        string water = waterApplied ? "Air:OK" : "Air:perlu disiram";
+        string fertilizer = fertilizerApplied ? "Pupuk:OK (+30% cepat, +25% HP)" : "Pupuk:opsional";
+        return StageName + "  " + water + "  " + fertilizer;
     }
 
     // ------------------------------------------------------------------
@@ -216,8 +238,9 @@ public class TreeGrowth : MonoBehaviour
         stageTimer = 0f;
         fertilizerApplied = false;
         waterApplied = false;
-        lampApplied = false;
 
+        // Bonus pupuk tidak menumpuk antar tahap; ApplyStageVisuals mengembalikan
+        // HP maksimum ke nilai dasar tahap ini.
         ApplyStageVisuals();
 
         if (IsMature)
@@ -243,14 +266,32 @@ public class TreeGrowth : MonoBehaviour
         RefreshLabel();
 
         if (TreeEditController.Instance != null)
-            TreeEditController.Instance.ShowHint("Tumbuh menjadi " + StageName + ". Beri pupuk + air + lampu lagi.", 3f);
+            TreeEditController.Instance.ShowHint("Tumbuh menjadi " + StageName + ". Siram lagi dengan Penyiram (pupuk opsional).", 3f);
     }
 
     void ApplyStageVisuals()
     {
-        int index = Mathf.Clamp(stageIndex, 0, stageScales.Length - 1);
-        float scale = stageScales[index];
-        transform.localScale = Vector3.one * Mathf.Max(0.1f, scale);
+        TreeModelStages modelStages = GetComponent<TreeModelStages>();
+
+        if (modelStages != null && modelStages.IsReady)
+        {
+            // Model 3D: tiap tahap memakai ukuran mesh sendiri, jadi tidak perlu
+            // menskalakan root secara berlebihan.
+            modelStages.SetStage(stageIndex);
+            transform.localScale = Vector3.one * modelStages.rootScale;
+
+            float height = modelStages.HeightFor(stageIndex);
+            if (tree != null && tree.healthBarRoot != null)
+                tree.healthBarRoot.transform.localPosition = new Vector3(0f, height + 0.7f, 0f);
+
+            labelHeight = height + 1.1f;
+        }
+        else
+        {
+            int index = Mathf.Clamp(stageIndex, 0, stageScales.Length - 1);
+            float scale = stageScales[index];
+            transform.localScale = Vector3.one * Mathf.Max(0.1f, scale);
+        }
 
         if (tree != null && variant != null)
         {
